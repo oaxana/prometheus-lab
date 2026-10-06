@@ -25,6 +25,7 @@ function saveAdminKey(k){try{k?sessionStorage.setItem('prometheus-lab-admin',k):
 async function api(path,body,headers){
   const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
   let data={};try{data=await r.json();}catch(e){}
+  if(r.status===401&&data.code==='crew_login'){location.reload();throw new Error('Session expired — please log in again.');}
   if(!r.ok){const err=new Error(data.error||('Request failed ('+r.status+')'));err.status=r.status;throw err;}
   return data;
 }

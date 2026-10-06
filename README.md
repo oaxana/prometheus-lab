@@ -29,17 +29,21 @@ Create an API key at [console.anthropic.com](https://console.anthropic.com).
    | `SUPABASE_URL` | your Supabase Project URL |
    | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key (server-only) |
    | `ADMIN_KEY` | a passphrase you choose; unlocks "Run synthesis" |
+   | `SITE_PASSWORD` | the crew password shown on the landing page (use a different one from `ADMIN_KEY`) |
 
 4. Deploy, then share the URL.
 
 ### 4. Running synthesis
 Open the **Synthesis** tab → **Project lead? Unlock** → enter your `ADMIN_KEY` → **Run synthesis**. Results are saved and visible to everyone.
 
+## Crew password
+`middleware.js` puts a password page in front of the whole site, including `config.js` and `/api/*`. Share `SITE_PASSWORD` with the crew only. A correct entry sets a 30-day cookie. To rotate the password or kick everyone out, change `SITE_PASSWORD` in Vercel and redeploy. If the variable is missing, the site stays locked. Add a rate-limit rule on `/__login` in Vercel → Firewall to slow brute-force guessing.
+
 ## Local development
 ```bash
 npm install
 cp .env.example .env      # fill in the values
-npx vercel dev            # serves public/ and api/ at http://localhost:3000
+npx vercel dev            # serves public/, api/ and the password gate at http://localhost:3000
 ```
 
 ## How privacy works
