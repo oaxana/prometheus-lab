@@ -7,18 +7,22 @@ const POLL_MS=20000;
 let S={view:'home',submissions:[],synthesis:null,selectedPillars:new Set(),isOwner:false,
   synthesizing:false,submitting:false,anonymous:true,attachedFiles:[],attachedText:'',displayName:'',
   isTest:false,showTests:false,showMine:false,synthIncludeTests:false,myId:null,openPillars:new Set(),openRaw:new Set(),
-  loaded:false};
+  loaded:false,persona:0};
 let sb=null,adminKey='';
 
 // ---------- anonymous identity + admin key (browser storage, always wrapped) ----------
-function loadMyId(){
-  const KEY='prometheus-lab-uid';
+const MAIN_UID_KEY='prometheus-lab-uid';
+// Project-lead testing: each persona is a separate anonymous person (its own ID), so one browser can play three people.
+const PERSONAS={1:{label:'Me',key:MAIN_UID_KEY},2:{label:'Persona 2',key:'prometheus-lab-uid-p2'},3:{label:'Persona 3',key:'prometheus-lab-uid-p3'}};
+function loadMyId(KEY=MAIN_UID_KEY){
   try{const v=localStorage.getItem(KEY);if(v&&v.length>=8)return v;}catch(e){}
   const id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join('');
   try{localStorage.setItem(KEY,id);}catch(e){}
   return id;
 }
 function loadAdminKey(){try{return sessionStorage.getItem('prometheus-lab-admin')||'';}catch(e){return '';}}
+function loadPersona(){try{return Number(sessionStorage.getItem('prometheus-lab-persona'))||0;}catch(e){return 0;}}
+function savePersona(n){try{n?sessionStorage.setItem('prometheus-lab-persona',String(n)):sessionStorage.removeItem('prometheus-lab-persona');}catch(e){}}
 function saveAdminKey(k){try{k?sessionStorage.setItem('prometheus-lab-admin',k):sessionStorage.removeItem('prometheus-lab-admin');}catch(e){}}
 
 // ---------- data layer (Supabase) ----------
@@ -51,7 +55,9 @@ async function refresh(){
 }
 
 function init(){
-  S.myId=loadMyId();adminKey=loadAdminKey();S.isOwner=!!adminKey;
+  adminKey=loadAdminKey();S.isOwner=!!adminKey;
+  S.persona=S.isOwner&&PERSONAS[loadPersona()]?loadPersona():0;
+  S.myId=loadMyId(S.persona?PERSONAS[S.persona].key:MAIN_UID_KEY);
   const cfg=window.PROMETHEUS_LAB_CONFIG||{};
   if(cfg.SUPABASE_URL&&cfg.SUPABASE_ANON_KEY&&window.supabase){
     sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,
@@ -103,7 +109,8 @@ function renderSubmit(m){
   if(!sb){setupNeeded(m);return;}
   const chips=PILLARS.map(p=>`<button class="pillar-chip ${S.selectedPillars.has(p.id)?'selected':''}" onclick="togglePillar(${p.id})"><span class="emoji">${p.emoji}</span>${p.name}</button>`).join('');
   const fc=S.attachedFiles.map((f,i)=>`<div class="file-preview"><span>${f.type==='image'?'🖼️':'📄'}</span><span class="name">${esc(f.name)}</span><span style="color:var(--muted);font-size:11px">${f.type==='image'?'image':((f.text.length/1000).toFixed(0)+'k chars')}</span><button class="remove" onclick="removeFile(${i})">✕</button></div>`).join('');
-  m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>
+  const personaRow=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
+  m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>${personaRow}
   <div class="drop-zone" id="drop-zone"><input type="file" accept=".txt,.docx,.md,.rtf,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" multiple onchange="handleFiles(this.files);this.value=''"><span class="icon">📂</span><span class="label">Drop files here or <strong>browse</strong><br><span style="font-size:12px;color:var(--muted)">.txt, .docx, .pdf, .png, .jpg</span></span></div>${fc}
   <div class="or-divider">or write / paste below</div>
   <textarea id="voice-text" placeholder="What do you believe? What behaviors should the constitution enshrine? Paste from a doc, brain-dump, or write a sentence.">${esc(S.attachedText)}</textarea>
@@ -150,7 +157,7 @@ function renderVoices(m){
   <div class="filter-bar">
     <div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}" style="${S.showTests?'background:var(--muted)':''}"></div><span>Show tests</span></div>
     <div class="toggle-row" onclick="S.showMine=!S.showMine;render()"><div class="toggle toggle-sm ${S.showMine?'on':''}"></div><span>Mine only (${myCount})</span></div>
-  </div><div class="card">${bars}</div><h3 style="margin-bottom:16px">Submissions (${subs.length})</h3>${cards}`;
+  </div>${S.persona?`<p style="font-size:12px;color:var(--muted);margin:-8px 0 16px">Viewing as <strong>${esc(PERSONAS[S.persona].label)}</strong> — change on the Submit tab.</p>`:''}<div class="card">${bars}</div><h3 style="margin-bottom:16px">Submissions (${subs.length})</h3>${cards}`;
 }
 
 function renderSynthesis(m){
@@ -167,8 +174,11 @@ function renderSynthesis(m){
   }else if(S.synthesis){
     const syn=S.synthesis,ts=syn.timestamp?new Date(syn.timestamp).toLocaleString():'';
     sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${syn.count||'?'} voices · ${syn.includedTests?'tests included':'tests excluded'}</p>`;
-    if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong> <span style="font-size:11px;color:var(--commons)">[${esc(c.strength||'')}]</span><br>${esc(c.summary)}</div>`;});sb_+=`</div>`;}
-    if(syn.contested?.length){sb_+=`<div class="card"><span class="section-tag tag-contested">Contested Ground — Where we diverge</span>`;syn.contested.forEach(c=>{sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong><br>${(c.positions||[]).map((p,i)=>`<span style="color:var(--contested)">Position ${i+1}:</span> ${esc(p)}`).join('<br>')}<div class="tension">${esc(c.tension||'')}</div></div>`;});sb_+=`</div>`;}
+    if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong> <span style="font-size:11px;color:var(--commons)">[${esc(c.strength||'')}]</span><br>${esc(c.summary)}${c.voices?.length?`<div class="agreed">Agreed by: ${c.voices.map(esc).join(', ')}</div>`:''}</div>`;});sb_+=`</div>`;}
+    if(syn.contested?.length){sb_+=`<div class="card"><span class="section-tag tag-contested">Contested Ground — Where we diverge</span>`;syn.contested.forEach(c=>{
+      const items=(c.positions||[]).map((p,i)=>{const o=typeof p==='string'?{stance:p,voices:[]}:p;   // older saved syntheses stored plain strings
+        return`<li>${o.voices?.length?`<span class="who">${o.voices.map(esc).join(', ')}</span>`:`<span class="who">Position ${i+1}</span>`} ${esc(o.stance)}</li>`;}).join('');
+      sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong><ul class="syn-list">${items}</ul>${c.tension?`<div class="tension"><strong>Core tension:</strong> ${esc(c.tension)}</div>`:''}</div>`;});sb_+=`</div>`;}
     if(syn.gaps?.length){sb_+=`<div class="card"><span class="section-tag tag-gaps">The Gaps — What's missing</span>`;syn.gaps.forEach(g=>{sb_+=`<div class="synthesis-item"><strong>${esc(g.pillar)}</strong><br><span style="color:var(--gaps)">${esc(g.note)}</span></div>`;});sb_+=`</div>`;}
   }else{sb_=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once synthesis runs.</p></div>
     <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>
@@ -192,7 +202,18 @@ function renderSynthesis(m){
 
 // ---------- project-lead unlock (the key is checked by the server on every synthesis run) ----------
 function unlockAdmin(){const k=prompt('Project-lead key:');if(!k)return;adminKey=k.trim();saveAdminKey(adminKey);S.isOwner=true;render();}
-function lockAdmin(){adminKey='';saveAdminKey('');S.isOwner=false;render();}
+function lockAdmin(){adminKey='';saveAdminKey('');S.isOwner=false;setPersona(0);}
+function setPersona(n){
+  // Keep what was typed, but drop the on-screen name box so render() can't copy the previous persona's name back over the new one.
+  const t=document.getElementById('voice-text');if(t)S.attachedText=t.value;
+  document.getElementById('display-name')?.remove();
+  const wasLabel=Object.values(PERSONAS).some(p=>p.label===S.displayName);
+  S.persona=n;savePersona(n);
+  S.myId=loadMyId(n?PERSONAS[n].key:MAIN_UID_KEY);
+  S.isTest=n>1;   // fake people default to test submissions
+  if(n){S.anonymous=false;S.displayName=PERSONAS[n].label;}
+  else if(wasLabel){S.displayName='';S.anonymous=true;}
+  render();refresh();}
 
 // ---------- files ----------
 function setupDropZone(){const dz=document.getElementById('drop-zone');if(!dz)return;
@@ -286,8 +307,8 @@ async function submitVoice(){
     const {error}=await sb.from('submissions').insert({pillars,content:fullText,summary,auto_tagged:autoTagged,is_test:S.isTest,
       uid:S.myId,display_name:name});
     if(error)throw error;
-    S.selectedPillars=new Set();S.attachedFiles=[];S.attachedText='';S.displayName='';S.submitting=false;
-    const wasTest=S.isTest;S.isTest=false;
+    S.selectedPillars=new Set();S.attachedFiles=[];S.attachedText='';S.displayName=S.persona?PERSONAS[S.persona].label:'';S.submitting=false;
+    const wasTest=S.isTest;S.isTest=S.persona>1;
     await refresh();
     showToast(wasTest?'Test submission saved':'Your voice has been added to the fire');nav('voices');
   }catch(e){S.submitting=false;render();alert('Error: '+(e.message||e.code||'could not save'));}}
