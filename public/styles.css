@@ -103,3 +103,8 @@ input[type="text"]:focus{border-color:var(--accent)}input[type="text"]::placehol
 .persona-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 16px}
 .persona-label{font-size:12px;color:var(--muted)}
 .persona-row .pillar-chip{padding:8px 12px}
+.syn-list.commons li::marker{color:var(--commons)}.syn-list.commons .who{color:var(--commons)}
+.syn-list.gaps li::marker{color:var(--gaps)}.syn-list.gaps .who{color:var(--gaps)}
+.syn-list.gaps .who::after{content:none}.syn-list.gaps .who{display:block;margin-bottom:2px}
+.syn-sub{margin:4px 0 0;padding-left:18px;font-size:13px;color:var(--muted)}.syn-sub li{margin-bottom:3px}
+.syn-sub li::marker{color:var(--gaps)}

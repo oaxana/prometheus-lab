@@ -174,12 +174,20 @@ function renderSynthesis(m){
   }else if(S.synthesis){
     const syn=S.synthesis,ts=syn.timestamp?new Date(syn.timestamp).toLocaleString():'';
     sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${syn.count||'?'} voices · ${syn.includedTests?'tests included':'tests excluded'}</p>`;
-    if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong> <span style="font-size:11px;color:var(--commons)">[${esc(c.strength||'')}]</span><br>${esc(c.summary)}${c.voices?.length?`<div class="agreed">Agreed by: ${c.voices.map(esc).join(', ')}</div>`:''}</div>`;});sb_+=`</div>`;}
+    if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{
+      // older saved syntheses had one summary + voices per pillar instead of a list of points
+      const points=c.points?.length?c.points:[{point:c.summary,voices:c.voices}];
+      const items=points.map(p=>`<li>${p.voices?.length?`<span class="who">${p.voices.map(esc).join(', ')}</span>`:''} ${esc(p.point)}</li>`).join('');
+      sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong>${c.strength?` <span class="pill auto">${esc(c.strength)}</span>`:''}<ul class="syn-list commons">${items}</ul></div>`;});sb_+=`</div>`;}
     if(syn.contested?.length){sb_+=`<div class="card"><span class="section-tag tag-contested">Contested Ground — Where we diverge</span>`;syn.contested.forEach(c=>{
       const items=(c.positions||[]).map((p,i)=>{const o=typeof p==='string'?{stance:p,voices:[]}:p;   // older saved syntheses stored plain strings
         return`<li>${o.voices?.length?`<span class="who">${o.voices.map(esc).join(', ')}</span>`:`<span class="who">Position ${i+1}</span>`} ${esc(o.stance)}</li>`;}).join('');
       sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong><ul class="syn-list">${items}</ul>${c.tension?`<div class="tension"><strong>Core tension:</strong> ${esc(c.tension)}</div>`:''}</div>`;});sb_+=`</div>`;}
-    if(syn.gaps?.length){sb_+=`<div class="card"><span class="section-tag tag-gaps">The Gaps — What's missing</span>`;syn.gaps.forEach(g=>{sb_+=`<div class="synthesis-item"><strong>${esc(g.pillar)}</strong><br><span style="color:var(--gaps)">${esc(g.note)}</span></div>`;});sb_+=`</div>`;}
+    if(syn.gaps?.length){sb_+=`<div class="card"><span class="section-tag tag-gaps">The Gaps — What's missing</span>`;syn.gaps.forEach(g=>{
+      const topics=(PILLARS.find(p=>p.id===g.pillarId)?.bullets||[]).slice(0,4);
+      sb_+=`<div class="synthesis-item"><strong>${esc(g.pillar)}</strong><ul class="syn-list gaps">
+        <li><span class="who">Why it matters</span> ${esc(g.note)}</li>
+        ${topics.length?`<li><span class="who">Topics to consider</span><ul class="syn-sub">${topics.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></li>`:''}</ul></div>`;});sb_+=`</div>`;}
   }else{sb_=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once synthesis runs.</p></div>
     <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>
     <div class="preview-block"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span><p style="margin-top:8px">Uncovered pillars appear here.</p></div>`;}
