@@ -49,8 +49,8 @@ create policy "anyone can submit"
   with check (true);   -- field validation is done by the CHECK constraints above
 
 -- Deliberately NO select / update / delete policies for anon:
--- RLS denies them by default, so `content` and `uid` cannot be read or edited
--- through the REST API.
+-- RLS denies them by default, so `content` and `uid` cannot be read, edited or
+-- deleted through the REST API. Visitors delete only via delete_my_submission().
 
 -- ---------------------------------------------------------------------------
 -- list_submissions(p_uid): the only way the browser reads submissions
@@ -89,6 +89,56 @@ $$;
 
 revoke all on function public.list_submissions(text) from public;
 grant execute on function public.list_submissions(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- delete_my_submission(p_id, p_uid): lets a visitor delete ONLY their own row
+-- Deletes the row only if both the submission id and the caller's anonymous
+-- uid match. Returns true if a row was deleted, false otherwise.
+-- ---------------------------------------------------------------------------
+create or replace function public.delete_my_submission(p_id uuid, p_uid text)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  with deleted as (
+    delete from public.submissions
+    where id = p_id
+      and p_uid is not null
+      and uid = p_uid
+    returning 1
+  )
+  select exists (select 1 from deleted);
+$$;
+
+revoke all on function public.delete_my_submission(uuid, text) from public;
+grant execute on function public.delete_my_submission(uuid, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- set_my_submission_test(p_id, p_uid, p_is_test): mark/unmark YOUR submission as a test
+-- Test submissions are left out of synthesis unless "Include test submissions" is on.
+-- Only changes the row if both the id and the caller's anonymous uid match.
+-- Returns true if a row was updated.
+-- ---------------------------------------------------------------------------
+create or replace function public.set_my_submission_test(p_id uuid, p_uid text, p_is_test boolean)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  with updated as (
+    update public.submissions
+       set is_test = coalesce(p_is_test, false)
+     where id = p_id
+       and p_uid is not null
+       and uid = p_uid
+    returning 1
+  )
+  select exists (select 1 from updated);
+$$;
+
+revoke all on function public.set_my_submission_test(uuid, text, boolean) from public;
+grant execute on function public.set_my_submission_test(uuid, text, boolean) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- synthesis (single row, id = 1) — the latest AI synthesis, public to read

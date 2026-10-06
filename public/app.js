@@ -139,7 +139,7 @@ function renderVoices(m){
     if(isMine){
       const c=s.content||'';
       const rawPreview=c.length>800?(c.slice(0,800)+'…'):c;
-      rawBlock=`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button><div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`;
+      rawBlock=`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button><button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button><button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button><div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`;
     }
     return`<div class="submission-card${isMine?' mine':''}${s.isTest?' test-card':''}">
       <div class="submission-meta">${esc(who)} · ${when}${s.autoTagged?' · <span style="color:var(--commons)">auto-tagged</span>':''}${isMine?' · <span class="mine-badge">yours</span>':''}${s.isTest?' · <span class="test-badge">test</span>':''}</div>
@@ -240,6 +240,23 @@ function togglePillar(id){S.selectedPillars.has(id)?S.selectedPillars.delete(id)
 function toggleAnon(){S.anonymous=!S.anonymous;render()}
 function togglePillarRef(id){S.openPillars.has(id)?S.openPillars.delete(id):S.openPillars.add(id);render()}
 function toggleAllPillars(){if(S.openPillars.size===PILLARS.length)S.openPillars.clear();else PILLARS.forEach(p=>S.openPillars.add(p.id));render();}
+async function setTestFlag(id,flag){
+  try{
+    const {data,error}=await sb.rpc('set_my_submission_test',{p_id:id,p_uid:S.myId,p_is_test:flag});
+    if(error)throw error;
+    if(!data){alert('Could not update — this submission is not yours, or it is gone.');await refresh();return;}
+    await refresh();render();
+    showToast(flag?('Marked as test — left out of synthesis'+(S.showTests?'':' (turn on "Show tests" to see it)')):'Unmarked — included in synthesis');
+  }catch(e){alert('Error: '+(e.message||'could not update'));}}
+async function deleteMine(id){
+  if(!confirm('Delete this submission? This cannot be undone.'))return;
+  try{
+    const {data,error}=await sb.rpc('delete_my_submission',{p_id:id,p_uid:S.myId});
+    if(error)throw error;
+    if(!data){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
+    S.openRaw.delete('raw-'+id);
+    await refresh();render();showToast('Your submission was deleted');
+  }catch(e){alert('Error: '+(e.message||'could not delete'));}}
 function toggleRaw(id){S.openRaw.has(id)?S.openRaw.delete(id):S.openRaw.add(id);document.getElementById(id)?.classList.toggle('show');}
 
 // ---------- submit ----------
