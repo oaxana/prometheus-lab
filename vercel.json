@@ -5,6 +5,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/summarize.js": { "maxDuration": 30 },
+    "api/google-doc.js": { "maxDuration": 30 },
     "api/synthesize.js": { "maxDuration": 60 }
   },
   "headers": [

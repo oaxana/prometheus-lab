@@ -46,6 +46,9 @@ cp .env.example .env      # fill in the values
 npx vercel dev            # serves public/, api/ and the password gate at http://localhost:3000
 ```
 
+## Supported submission formats
+Text, `.txt`/`.md`, `.docx`, `.pptx` (slide text in deck order plus speaker notes), `.pdf`, images, and **Google Docs / Google Slides links**. Google files must be shared as "Anyone with the link can view"; the `api/google-doc.js` function fetches Google's plain-text export and only ever contacts Google. Images inside slides are not read, and old `.ppt` / Keynote files must be saved as `.pptx` first.
+
 ## How privacy works
 - Each browser gets a random anonymous ID in `localStorage`. "Mine only" and "yours" use it. Clearing site data loses that link to your past submissions.
 - Raw text is never readable with the public key. The browser reads through the `list_submissions` database function, which returns everyone's summaries but only returns raw text for rows matching *your* ID. Only the `synthesize` function (service-role key) reads all raw text.

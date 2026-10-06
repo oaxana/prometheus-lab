@@ -7,7 +7,7 @@ const POLL_MS=20000;
 let S={view:'home',submissions:[],synthesis:null,selectedPillars:new Set(),isOwner:false,
   synthesizing:false,submitting:false,anonymous:true,attachedFiles:[],attachedText:'',displayName:'',
   isTest:false,showTests:false,showMine:false,synthIncludeTests:false,myId:null,openPillars:new Set(),openRaw:new Set(),
-  loaded:false,persona:0};
+  loaded:false,persona:0,gdocUrl:'',gdocBusy:false};
 let sb=null,adminKey='';
 
 // ---------- anonymous identity + admin key (browser storage, always wrapped) ----------
@@ -76,6 +76,7 @@ function render(){
   // Keep whatever is typed in the form across re-renders.
   const t=document.getElementById('voice-text');if(t)S.attachedText=t.value;
   const n=document.getElementById('display-name');if(n)S.displayName=n.value;
+  const g=document.getElementById('gdoc-url');if(g)S.gdocUrl=g.value;
   document.getElementById('nav').innerHTML=[
     {id:'home',label:'Home',icon:'🔥'},{id:'pillars',label:'Pillars',icon:'📋'},
     {id:'submit',label:'Submit',icon:'✍️'},{id:'voices',label:'Voices',icon:'👁'},
@@ -111,7 +112,9 @@ function renderSubmit(m){
   const fc=S.attachedFiles.map((f,i)=>`<div class="file-preview"><span>${f.type==='image'?'🖼️':'📄'}</span><span class="name">${esc(f.name)}</span><span style="color:var(--muted);font-size:11px">${f.type==='image'?'image':((f.text.length/1000).toFixed(0)+'k chars')}</span><button class="remove" onclick="removeFile(${i})">✕</button></div>`).join('');
   const personaRow=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
   m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>${personaRow}
-  <div class="drop-zone" id="drop-zone"><input type="file" accept=".txt,.docx,.md,.rtf,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" multiple onchange="handleFiles(this.files);this.value=''"><span class="icon">📂</span><span class="label">Drop files here or <strong>browse</strong><br><span style="font-size:12px;color:var(--muted)">.txt, .docx, .pdf, .png, .jpg</span></span></div>${fc}
+  <div class="drop-zone" id="drop-zone"><input type="file" accept=".txt,.docx,.pptx,.md,.rtf,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" multiple onchange="handleFiles(this.files);this.value=''"><span class="icon">📂</span><span class="label">Drop files here or <strong>browse</strong><br><span style="font-size:12px;color:var(--muted)">.txt, .docx, .pptx, .pdf, .png, .jpg</span></span></div>${fc}
+  <div class="form-row" style="margin:0 0 6px"><input type="text" id="gdoc-url" placeholder="Or paste a Google Docs / Slides link" value="${esc(S.gdocUrl)}" onkeydown="if(event.key==='Enter')addGoogleLink()"><button class="btn btn-secondary" style="padding:10px 18px;font-size:14px" onclick="addGoogleLink()" ${S.gdocBusy?'disabled':''}>${S.gdocBusy?'Adding…':'Add'}</button></div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Google files must be shared as “Anyone with the link can view”.</p>
   <div class="or-divider">or write / paste below</div>
   <textarea id="voice-text" placeholder="What do you believe? What behaviors should the constitution enshrine? Paste from a doc, brain-dump, or write a sentence.">${esc(S.attachedText)}</textarea>
   <h3 style="margin-top:20px">Pillars <span style="font-weight:400;color:var(--muted);font-size:13px">(optional — AI auto-detects if you skip)</span></h3>
@@ -258,12 +261,55 @@ async function handleFiles(files){for(const file of files){try{
       const data=await blobToBase64(file);
       if(attachedBytes()+b64Bytes(data)>MAX_ATTACH_BYTES){showToast(file.name+' has no selectable text and is too large to analyze. Try pasting instead.');continue;}
       S.attachedFiles.push({name:file.name,text:'[PDF: '+file.name+' — will be analyzed as image]',type:'image',mediaType:'application/pdf',data});}
+  }else if(/\.pptx$/i.test(file.name)){
+    const text=await pptxToText(file);
+    if(text)S.attachedFiles.push({name:file.name,text,type:'text'});else showToast('No text found in '+file.name);
+  }else if(/\.(ppt|key|odp)$/i.test(file.name)){
+    showToast(file.name+': please save it as .pptx (or paste a Google Slides link)');
   }else if(file.name.endsWith('.docx')){
     const buf=await file.arrayBuffer();const r=await mammoth.extractRawText({arrayBuffer:buf});
     if(r.value.trim())S.attachedFiles.push({name:file.name,text:r.value.trim(),type:'text'});
   }else{const text=await file.text();
     if(text.trim())S.attachedFiles.push({name:file.name,text:text.trim(),type:'text'});
   }}catch(e){console.error(e);alert('Could not read '+file.name+'. Try pasting instead.');}}render();}
+// ---- PowerPoint (.pptx is a zip of XML): slide text in presentation order, plus speaker notes ----
+const DML='http://schemas.openxmlformats.org/drawingml/2006/main',REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const xml=str=>new DOMParser().parseFromString(str,'application/xml');
+function paragraphs(doc){ // text per paragraph, skipping auto-fields such as slide numbers
+  return [...doc.getElementsByTagNameNS(DML,'p')].map(p=>[...p.getElementsByTagNameNS(DML,'t')].filter(t=>t.parentNode.localName!=='fld').map(t=>t.textContent).join('')).map(t=>t.trim()).filter(Boolean);}
+async function pptxToText(file){
+  if(file.size>30*1024*1024){showToast(file.name+' is too large (30 MB max)');return '';}
+  if(typeof JSZip==='undefined'){showToast('PowerPoint reader failed to load — reload the page');return '';}
+  const zip=await JSZip.loadAsync(await file.arrayBuffer());
+  const read=async n=>zip.file(n)?xml(await zip.file(n).async('string')):null;
+  let order=[];
+  try{ // real slide order lives in presentation.xml, not in the file names
+    const pres=await read('ppt/presentation.xml'),rels=await read('ppt/_rels/presentation.xml.rels');
+    const target={};[...rels.getElementsByTagName('Relationship')].forEach(r=>target[r.getAttribute('Id')]=r.getAttribute('Target'));
+    order=[...pres.getElementsByTagNameNS('*','sldId')].map(e=>target[e.getAttributeNS(REL,'id')]).filter(Boolean).map(t=>'ppt/'+t.replace(/^\/?(ppt\/)?/,''));
+  }catch(e){}
+  if(!order.length)order=Object.keys(zip.files).filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a,b)=>parseInt(a.match(/(\d+)\.xml$/)[1])-parseInt(b.match(/(\d+)\.xml$/)[1]));
+  const out=[];let i=0;
+  for(const path of order){const doc=await read(path);if(!doc)continue;i++;
+    const lines=paragraphs(doc);
+    let notes=[];
+    try{const rels=await read(path.replace(/slides\/(slide\d+\.xml)$/,'slides/_rels/$1.rels'));
+      const rel=rels&&[...rels.getElementsByTagName('Relationship')].find(r=>/notesSlide/.test(r.getAttribute('Type')||''));
+      if(rel){const nd=await read('ppt/'+rel.getAttribute('Target').replace(/^\.\.\//,''));if(nd)notes=paragraphs(nd);}}catch(e){}
+    if(lines.length||notes.length)out.push(`Slide ${i}\n${lines.join('\n')}${notes.length?`\nSpeaker notes: ${notes.join(' ')}`:''}`);}
+  return out.join('\n\n');}
+
+// ---- Google Docs / Slides link (the server fetches Google's text export) ----
+async function addGoogleLink(){
+  const el=document.getElementById('gdoc-url');const url=(el?el.value:S.gdocUrl).trim();
+  if(!url||S.gdocBusy)return;
+  if(!/^https:\/\/docs\.google\.com\/.*(document|presentation)\/d\//.test(url))return showToast('That doesn’t look like a Google Docs or Slides link');
+  S.gdocUrl=url;S.gdocBusy=true;render();
+  try{const r=await api('/api/google-doc',{url});
+    S.attachedFiles.push({name:(r.kind==='presentation'?'Slides: ':'Doc: ')+r.name,text:r.text,type:'text'});S.gdocUrl='';
+    const box=document.getElementById('gdoc-url');if(box)box.value='';   // render() copies the box back into state, so clear the box too
+  }catch(e){showToast(e.message||'Could not read that Google file');}
+  S.gdocBusy=false;render();}
 function removeFile(i){S.attachedFiles.splice(i,1);render()}
 function togglePillar(id){S.selectedPillars.has(id)?S.selectedPillars.delete(id):S.selectedPillars.add(id);render()}
 function toggleAnon(){S.anonymous=!S.anonymous;render()}
