@@ -86,19 +86,28 @@ function supabase() {
 }
 
 // Keep only well-formed items and take pillar names from our own list, so they always match the ids.
+// Anonymous submissions are shown as a count ("3 anonymous"), never as numbered voices.
+const ANON_LABEL = /^Anonymous voice \d+$/;
+const collapseAnon = (list) => {
+  const named = list.filter((a) => !ANON_LABEL.test(a));
+  const n = list.length - named.length;
+  return n ? [...named, `${n} anonymous`] : named;
+};
+const scrub = (text) => text.replace(/Anonymous voice \d+/gi, 'an anonymous voice');
 const valid = (id) => Number.isInteger(id) && id >= 1 && id <= 12;
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 function clean(out, authors) {
   const known = new Set(authors);
   // Keep only author labels we actually gave the model, once each.
-  const who = (list) => [...new Set((Array.isArray(list) ? list : []).map(str).filter((a) => known.has(a)))];
+  const who = (list) => collapseAnon([...new Set((Array.isArray(list) ? list : []).map(str).filter((a) => known.has(a)))]);
+  const text = (v) => scrub(str(v));
   const commons = (out.commons ?? [])
     .filter((c) => valid(c.pillarId))
     .map((c) => ({
       pillar: pillarName(c.pillarId),
       pillarId: c.pillarId,
       strength: STRENGTHS.includes(c.strength) ? c.strength : 'emerging',
-      points: (c.points ?? []).map((p) => ({ point: str(p?.point), voices: who(p?.voices) })).filter((p) => p.point),
+      points: (c.points ?? []).map((p) => ({ point: text(p?.point), voices: who(p?.voices) })).filter((p) => p.point),
     }))
     .filter((c) => c.points.length);
   const contested = (out.contested ?? [])
@@ -107,13 +116,13 @@ function clean(out, authors) {
       pillar: pillarName(c.pillarId),
       pillarId: c.pillarId,
       positions: (c.positions ?? [])
-        .map((p) => ({ stance: str(p?.stance), voices: who(p?.voices) }))
+        .map((p) => ({ stance: text(p?.stance), voices: who(p?.voices) }))
         .filter((p) => p.stance),
-      tension: str(c.tension),
+      tension: text(c.tension),
     }));
   const gaps = (out.gaps ?? [])
     .filter((g) => valid(g.pillarId))
-    .map((g) => ({ pillar: pillarName(g.pillarId), pillarId: g.pillarId, note: str(g.note) }));
+    .map((g) => ({ pillar: pillarName(g.pillarId), pillarId: g.pillarId, note: text(g.note) }));
   return { commons, contested, gaps };
 }
 
@@ -126,20 +135,19 @@ export default async function handler(req, res) {
     const db = supabase();
     const { data: rows, error } = await db
       .from('submissions')
-      .select('pillars, content, summary, is_test, created_at, display_name, uid')
+      .select('pillars, content, summary, is_test, created_at, display_name')
       .order('created_at', { ascending: true })
       .limit(1000);
     if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
     const voices = rows.filter((r) => includeTests || !r.is_test);
     if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
 
-    // Who said it: the name they chose to show, otherwise "Anonymous voice N" (one number per anonymous person).
-    const anonNumber = new Map();
+    // Who said it: the name they chose to show (same name = same author), otherwise a numbered anonymous voice
+    // (one per submission). The numbers are only for the model; the saved result shows "N anonymous".
+    let anonCount = 0;
     const authorOf = (r) => {
       const name = (r.display_name ?? '').replace(/["<>]/g, '').trim();
-      if (name) return name;
-      if (!anonNumber.has(r.uid)) anonNumber.set(r.uid, anonNumber.size + 1);
-      return `Anonymous voice ${anonNumber.get(r.uid)}`;
+      return name || `Anonymous voice ${++anonCount}`;
     };
     const labels = voices.map(authorOf);
     const authors = [...new Set(labels)];
@@ -167,7 +175,8 @@ Sort the pillars into three categories:
 - gaps: nobody (or almost nobody) addressed it. Say why the gap matters.
 
 Rules:
-- Name authors EXACTLY as written in the AUTHORS line. An author may have several submissions; treat them as one person.
+- Name authors EXACTLY as written in the AUTHORS line, and only in the "voices" lists. An author may have several submissions; treat them as one person.
+- Never write author names or labels (such as "Anonymous voice 3") inside the text of a point, stance, tension or note.
 - Every pillar goes in exactly one category. Be specific. Quote submissions where possible.`;
 
     const msg = await anthropic()
