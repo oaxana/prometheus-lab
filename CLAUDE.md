@@ -26,9 +26,9 @@ Everything in README "Features" is built, deployed and passing local tests. Not 
 
 **Next up, in order**
 1. Have the owner run synthesis on the seed data (`seed-test-voices.sql`) and review the real output; tune the prompt in `api/synthesize.js` if Contested/Commons/Gaps look thin or misattributed.
-2. **Privacy review**, which the owner explicitly deferred ("then we can figure out privacy issues after"): named attribution in the public synthesis, meaning of "anonymous", retention, an attribution on/off switch.
+2. **Privacy review**, which the owner explicitly deferred ("then we can figure out privacy issues after"). **Start with data access:** the GitHub repo is public and contains the Supabase anon key, so outsiders can read summaries/names/synthesis and insert rows straight through Supabase, bypassing the password gate (raw text stays private). Ask whether the owner made the repo private; the robust fix is moving reads/writes behind the gated `/api` and revoking the anon key's access. Then: named attribution in the public synthesis, meaning of "anonymous", retention, an attribution on/off switch.
 3. Decide whether to raise the AI text limits (8,000 chars/submission for summaries in `api/summarize.js`; 6,000 chars/submission in `api/synthesize.js`); long decks/docs are currently truncated for the AI.
 4. Confirm the owner set: Anthropic monthly spend limit; Vercel Firewall rate-limit rule on `/__login`.
-5. Before sharing widely: delete test data (`delete from public.submissions where uid like 'demo-voter-%';` and any manual tests), then share `SITE_PASSWORD` with the crew.
+5. Before sharing widely (the DB held 10 test submissions + a saved synthesis at end of 2026-10-05): delete test data (`delete from public.submissions where uid like 'demo-voter-%';` and any manual tests), then share `SITE_PASSWORD` with the crew.
 
 Backlog ideas: "Clear saved synthesis" button; separate models for summaries vs synthesis; `X-Frame-Options`/CSP; per-person access; export synthesis.

@@ -160,7 +160,7 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 - "Anonymous" means no name is shown; ownership is tracked by a random ID in the browser. Clearing site data loses the link to your past submissions.
 - One shared crew password: you cannot remove a single person, only rotate it.
 - **Named** authors appear by name in the synthesis everyone can read. Anonymous submitters appear only as "N anonymous". A privacy review of this is on the to-do list.
-- Anyone inside the gate can read `config.js` (the Supabase URL and anon key). That is safe by design because the database rules, not secrecy of the key, protect the data.
+- **The Supabase URL and anon key are in this repository, and the anon key is public by design.** Row-level security keeps *raw text* private regardless. But anyone holding that key (so, anyone, if the repo is public) can call Supabase's API directly, which **bypasses the password gate** (the gate protects the website and the AI endpoints, not Supabase itself). With the key they can read the *summaries, names, pillar tags and saved synthesis* via `list_submissions()` and the `synthesis` table, and insert rows. Mitigations: keep the repository **private**, and/or move all reads and writes behind the gated `/api` (see to-do #1). A full-history scan on 2026-10-05 found no other secret in git.
 
 ## Database reference
 
@@ -230,10 +230,10 @@ npm test                    # all 10 suites, ~2 min   (npm test -- persona  runs
 - [ ] The raw-text privacy check with real rows (the table was empty when checked): a direct read of `submissions` with the anon key should return `[]` even when rows exist.
 
 **Open to-do list (roughly in priority order)**
-1. **Privacy review** (explicitly deferred by the owner): named attribution in the public synthesis, what anonymous means in practice, retention, who can see what. Possible outcome: a switch to turn attribution off.
+1. **Privacy review** (explicitly deferred by the owner), starting with **who can reach the data**: the repo was found to be public on 2026-10-05, which exposes the anon key, so summaries/names/synthesis are readable by outsiders and rows can be inserted directly (see Security caveats). Options, simplest first: (a) make the GitHub repo private (Settings → Danger Zone → Change visibility; Vercel keeps working), (b) move reads/writes behind the gated API so the anon key has no access at all (then the key is harmless even if public), (c) rotate the Supabase keys. Then the remaining questions: named attribution in the public synthesis, what anonymous means in practice, retention, an attribution on/off switch.
 2. **Confirm the guardrails are set:** Anthropic monthly spend limit; Vercel Firewall rate-limit rule on `/__login`.
 3. **Decide on the AI text limits** (8,000 chars per submission for summaries, 6,000 per submission for synthesis). Long decks/docs are cut off for the AI though the full text is stored. The model's context is far larger, so these can be raised.
-4. **Clean up test data** before sharing widely (`delete from public.submissions where uid like 'demo-voter-%';` plus any manual test rows). Zero test rows existed as of 2026-10-05.
+4. **Clean up test data** before sharing widely (`delete from public.submissions where uid like 'demo-voter-%';` plus any manual test rows). At the end of the 2026-10-05 session the database held 10 submissions and a saved synthesis from testing.
 5. Share `SITE_PASSWORD` with the crew only.
 
 **Ideas / backlog:** "Clear saved synthesis" button; option to use a different model for summaries vs synthesis; server-side refusal fallbacks (see decisions); `X-Frame-Options`/CSP hardening; per-person access instead of one shared password; export of synthesis; raising the 4-attachment cap or telling users about it.
