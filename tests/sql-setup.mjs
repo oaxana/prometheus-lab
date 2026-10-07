@@ -15,6 +15,16 @@ export async function installSchema(db, rerun = true) {
     $$;
     insert into auth.users(id) values ('${ALICE}'), ('${BOB}');
     grant usage on schema public, auth to anon, authenticated;
+    -- Minimal stand-in for Supabase Storage so the bucket and its policies can be exercised.
+    create schema storage;
+    create table storage.buckets (id text primary key, name text, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+    alter table storage.objects enable row level security;
+    create function storage.foldername(name text) returns text[] language sql immutable as $$
+      select (string_to_array(name, '/'))[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)]
+    $$;
+    grant usage on schema storage to anon, authenticated;
+    grant select, insert, delete on storage.objects to authenticated;
   `);
   const sql = fs.readFileSync(ROOT + '/supabase-setup.sql', 'utf8').replace('create extension if not exists pgcrypto;', '');
   await db.exec(sql);

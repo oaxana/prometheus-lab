@@ -1,4 +1,4 @@
-import { launch } from './lib.mjs';
+import { launch, runWizard } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch();
@@ -6,8 +6,8 @@ const ctx = await b.newContext({ viewport: { width: 420, height: 900 } }); const
 const dialogs = []; let accept = false;
 p.on('dialog', async (d) => { dialogs.push(d.message()); accept ? await d.accept() : await d.dismiss(); });
 const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
-const submit = async (text) => { await p.click('nav button:has-text("Submit")'); await p.fill('#voice-text', text); await p.click('main .btn-primary:has-text("Submit")'); await p.waitForSelector('.submission-card'); };
-await p.goto(B);await p.click('nav button:has-text("Submit")');await p.fill('#auth-email','delete@example.com');await p.click('button:has-text("Send code")');await p.fill('#auth-code','123456');await p.click('button:has-text("Verify")');await p.waitForSelector('#voice-text');
+const submit = async (text) => { await runWizard(p, { text }); await p.click('nav button:has-text("Voices")'); await p.waitForSelector('.submission-card'); };
+await p.goto(B);await p.click('nav button:has-text("Submit")');await p.fill('#auth-email','delete@example.com');await p.click('button:has-text("Send code")');await p.fill('#auth-code','123456');await p.click('button:has-text("Verify")');await p.waitForSelector('#wz-start');
 await submit('first voice'); await submit('second voice');
 check('two cards, each with Delete', (await p.locator('.submission-card').count()) === 2 && (await p.locator('button:has-text("Delete")').count()) === 2);
 await p.screenshot({ path: 'screens/shot-delete.png', fullPage: true });

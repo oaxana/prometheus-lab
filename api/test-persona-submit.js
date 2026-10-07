@@ -59,6 +59,11 @@ export default async function handler(req, res) {
       : [];
     if (!content || content.length > 100000) throw new HttpError(400, 'Test contribution must be 1 to 100,000 characters.');
     if (summary.length > 2000) throw new HttpError(400, 'Summary is too long.');
+    // Optional metadata from the submission wizard. Persona rows never carry recordings or stored files.
+    const contributionType = typeof body.contributionType === 'string' ? body.contributionType.trim().slice(0, 120) : '';
+    const inputMode = ['text', 'voice', 'upload'].includes(body.inputMode) ? body.inputMode : 'text';
+    const pillarChoice = ['selected', 'not_sure', 'something_else'].includes(body.pillarChoice) ? body.pillarChoice : 'selected';
+    const fileName = typeof body.fileName === 'string' ? body.fileName.trim().slice(0, 255) : '';
 
     const { error } = await db.from('submissions').insert({
       pillars,
@@ -69,6 +74,10 @@ export default async function handler(req, res) {
       participant_id: null,
       uid: persona.uid,
       display_name: persona.name,
+      contribution_type: contributionType || null,
+      input_mode: inputMode,
+      pillar_choice: pillarChoice,
+      file_name: fileName || null,
     });
     if (error) throw new HttpError(500, 'Could not save the test persona submission.');
     return send(res, 200, { saved: true });

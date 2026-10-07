@@ -1,11 +1,11 @@
-import { launch } from './lib.mjs';
+import { launch, runWizard } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch();
 const p = await (await b.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'dark' })).newPage();
 p.on('dialog', (d) => d.accept()); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
 const nav = (t) => p.click(`nav button:has-text("${t}")`);
-const submit = async (t) => { await nav('Submit'); await p.fill('#voice-text', t); await p.click('main .btn-primary:has-text("Submit")'); await p.waitForSelector('h2:has-text("All Voices")'); };
+const submit = async (t) => { await runWizard(p, { text: t }); await nav('Voices'); await p.waitForSelector('h2:has-text("All Voices")'); };
 const postService = (path, body) => fetch(B + path, { method: 'POST', headers:{apikey:'service-test','content-type':'application/json'}, body: JSON.stringify(body) });
 const postApi = (body, key = 'letmein') => fetch(B + '/api/test-persona-submit', { method: 'POST', headers:{'x-admin-key':key,'content-type':'application/json'}, body: JSON.stringify(body) });
 

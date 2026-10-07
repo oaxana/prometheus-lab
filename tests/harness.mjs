@@ -15,6 +15,7 @@ process.env.ADMIN_KEY = 'letmein';
 const summarize = (await import(`${ROOT}/api/summarize.js`)).default;
 const synthesize = (await import(`${ROOT}/api/synthesize.js`)).default;
 const googleDoc = (await import(`${ROOT}/api/google-doc.js`)).default;
+const mapPillars = (await import(`${ROOT}/api/map-pillars.js`)).default;
 const testPersonaSubmit = (await import(`${ROOT}/api/test-persona-submit.js`)).default;
 // Fake Google: only the google hosts are intercepted; everything else (Anthropic fake, Supabase fake) goes to the real fetch.
 const realFetch = globalThis.fetch;
@@ -34,12 +35,14 @@ globalThis.fetch = async (u, o) => {
   return realFetch(u, o);
 };
 
-const db = { submissions: [], synthesis: null, participants: new Map(), authUsers: new Map(), refreshTokens: new Map() };
+const db = { submissions: [], discovery: [], objects: [], synthesis: null, participants: new Map(), authUsers: new Map(), refreshTokens: new Map() };
+let mapMode = 'ok'; // 'ok' | 'fail'
 export const log = [];
 let anthropicMode = 'ok'; // 'ok' | 'reject-attachments' | 'refusal'
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const readBody = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => r(b)); });
+const readBuf = (req) => new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c))); });
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
 
 function vercelRes(res) {
@@ -66,7 +69,11 @@ async function fakeAnthropic(req, res, body) {
   }
   const props = b.output_config?.format?.schema?.properties ?? {};
   let out;
-  if (props.commons) {
+  if (props.matched_pillars) {
+    if (mapMode === 'fail') return json(res, 500, { type: 'error', error: { type: 'api_error', message: 'boom' } });
+    out = { matched_pillars: [3, 1, 99, 3], new_ideas: ['AI-free quiet hours at every camp'], reasoning: 'Mentions access and consent.' };
+  }
+  else if (props.commons) {
     const prompt = b.messages[0].content;
     const sourceLabels = [...new Set([...prompt.matchAll(/source="([^"]+)"/g)].map((m) => m[1]))];
     const [a, bb = a, c = a, d = a] = sourceLabels;
@@ -135,6 +142,36 @@ async function fakeAuth(req, res, url, body) {
   return json(res, 404, { msg: `unknown auth route ${p}` });
 }
 
+// Storage fake: private bucket, one folder per participant (mirrors the policies in supabase-setup.sql).
+async function fakeStorage(req, res, url) {
+  const p = decodeURIComponent(url.pathname.replace('/supabase/storage/v1', ''));
+  const user = authUser(req);
+  const denied = () => json(res, 403, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+  log.push({ storage: req.method + ' ' + p });
+  if (!user) return denied();
+  const mine = (path) => path.startsWith(user.id + '/');
+  if (req.method === 'POST' && p.startsWith('/object/sign/')) {
+    const path = p.replace('/object/sign/submission-files/', '');
+    if (!mine(path) || !db.objects.some((o) => o.path === path)) return json(res, 400, { message: 'Object not found' });
+    return json(res, 200, { signedURL: `/object/sign/submission-files/${path}?token=t` });
+  }
+  if (req.method === 'POST' && p.startsWith('/object/submission-files/')) {
+    const path = p.replace('/object/submission-files/', ''), buf = await readBuf(req);
+    if (!mine(path)) return denied();
+    if (db.objects.some((o) => o.path === path)) return json(res, 409, { statusCode: '409', error: 'Duplicate', message: 'The resource already exists' });
+    const text = buf.toString('latin1');
+    const type = (text.match(/name="";[^\r\n]*\r\nContent-Type: ([^\r\n]+)/i) || [])[1] || req.headers['content-type'];
+    db.objects.push({ path, owner: user.id, type, size: buf.length });
+    return json(res, 200, { Id: randomUUID(), Key: 'submission-files/' + path });
+  }
+  if (req.method === 'DELETE' && p === '/object/submission-files') {
+    const { prefixes = [] } = JSON.parse(await readBody(req) || '{}');
+    db.objects = db.objects.filter((o) => !(prefixes.includes(o.path) && mine(o.path)));
+    return json(res, 200, []);
+  }
+  json(res, 404, { message: 'not found ' + p });
+}
+
 async function fakeSupabase(req, res, url, body) {
   const p = url.pathname.replace('/supabase/rest/v1', '');
   log.push({ supabase: req.method + ' ' + p });
@@ -146,6 +183,11 @@ async function fakeSupabase(req, res, url, body) {
       timestamp: s.ts,
       mine: (!!user && s.participant_id === user.id) || (!s.participant_id && s.is_test && !!p_test_uid && s.uid === p_test_uid),
       content: (!!user && s.participant_id === user.id) ? s.content : null,
+      pillar_choice: s.pillar_choice || 'selected',
+      ...(!!user && s.participant_id === user.id
+        ? { contribution_type: s.contribution_type ?? null, input_mode: s.input_mode || 'text', audio_url: s.audio_url ?? null, file_url: s.file_url ?? null, file_name: s.file_name ?? null,
+            discovery_audio_url: db.discovery.find((d) => d.id === s.discovery_input_id)?.audio_url ?? null }
+        : { contribution_type: null, input_mode: null, audio_url: null, file_url: null, file_name: null, discovery_audio_url: null }),
     }));
     return json(res, 200, rows);
   }
@@ -161,19 +203,42 @@ async function fakeSupabase(req, res, url, body) {
     if (!user) return json(res, 401, { message: 'Authentication required' });
     const input = JSON.parse(body || '{}');const name = db.participants.get(user.id)?.display_name || '';
     if (!input.p_anonymous && !name) return json(res, 400, { message: 'Set a display name before submitting by name.' });
-    db.submissions.push({ id: randomUUID(), ts: Date.now(), pillars: input.p_pillars || [], content: input.p_content, summary: input.p_summary || '', auto_tagged: !!input.p_auto_tagged, is_test: !!input.p_is_test, participant_id: user.id, uid: null, display_name: input.p_anonymous ? '' : name });
+    const own = (p) => p == null || p.startsWith(user.id + '/');
+    if (!own(input.p_audio_url) || !(own(input.p_file_url) || /^https:\/\/docs\.google\.com\//.test(input.p_file_url))) return json(res, 403, { message: 'File must be in your own storage folder.' });
+    const disc = input.p_discovery_input_id ? db.discovery.find((d) => d.id === input.p_discovery_input_id && d.participant_id === user.id) : null;
+    if (input.p_discovery_input_id && !disc) return json(res, 403, { message: 'Unknown discovery input.' });
+    if (disc) { disc.is_anonymous = input.p_anonymous !== false; disc.is_test = !!input.p_is_test; }
+    db.submissions.push({ id: randomUUID(), ts: Date.now(), pillars: input.p_pillars || [], content: input.p_content, summary: input.p_summary || '', auto_tagged: !!input.p_auto_tagged, is_test: !!input.p_is_test, participant_id: user.id, uid: null, display_name: input.p_anonymous ? '' : name,
+      contribution_type: (input.p_contribution_type || '').trim() || null, input_mode: input.p_input_mode || 'text', pillar_choice: input.p_pillar_choice || 'selected',
+      audio_url: input.p_audio_url ?? null, file_url: input.p_file_url ?? null, file_name: input.p_file_name ?? null, discovery_input_id: input.p_discovery_input_id ?? null });
     return json(res, 200, db.submissions.at(-1).id);
+  }
+  if (p === '/rpc/save_discovery_input') {
+    if (!user) return json(res, 401, { message: 'Authentication required' });
+    const i = JSON.parse(body || '{}');
+    if (i.p_audio_url && !i.p_audio_url.startsWith(user.id + '/')) return json(res, 403, { message: 'Recording must be in your own storage folder.' });
+    const fields = { input_text: i.p_input_text, input_type: i.p_input_type || 'text', audio_url: i.p_audio_url ?? null, ai_mapping: i.p_ai_mapping ?? null, is_anonymous: i.p_is_anonymous !== false, is_test: !!i.p_is_test };
+    if (!i.p_id) { const row = { id: randomUUID(), participant_id: user.id, ...fields }; db.discovery.push(row); return json(res, 200, row.id); }
+    const row = db.discovery.find((d) => d.id === i.p_id && d.participant_id === user.id);
+    if (!row) return json(res, 403, { message: 'Unknown discovery input.' });
+    Object.assign(row, fields); return json(res, 200, row.id);
+  }
+  if (p === '/rpc/update_my_submission') {
+    const i = JSON.parse(body || '{}');
+    const row = db.submissions.find((x) => x.id === i.p_id && user && x.participant_id === user.id);
+    if (row) { row.content = i.p_content; row.summary = i.p_summary || ''; row.contribution_type = (i.p_contribution_type || '').trim() || null; }
+    return json(res, 200, !!row);
   }
   if (p === '/rpc/set_my_submission_test') {
     const { p_id, p_is_test } = JSON.parse(body || '{}');
     const row = db.submissions.find((x) => x.id === p_id && user && x.participant_id === user.id);
-    if (row) row.is_test = !!p_is_test;
+    if (row) { row.is_test = !!p_is_test; const d = db.discovery.find((x) => x.id === row.discovery_input_id); if (d) d.is_test = !!p_is_test; }
     return json(res, 200, !!row);
   }
   if (p === '/rpc/delete_my_submission') {
     const { p_id } = JSON.parse(body || '{}');
     const i = db.submissions.findIndex((x) => x.id === p_id && user && x.participant_id === user.id);
-    if (i >= 0) db.submissions.splice(i, 1);
+    if (i >= 0) { const [gone] = db.submissions.splice(i, 1); db.discovery = db.discovery.filter((d) => d.id !== gone.discovery_input_id); }
     return json(res, 200, i >= 0);
   }
   if (p === '/participants' && req.method === 'GET') {
@@ -195,7 +260,7 @@ async function fakeSupabase(req, res, url, body) {
     return json(res, 200, deleted.map((s) => ({ id: s.id })));
   }
   if (p === '/submissions' && req.method === 'GET') {
-    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id })));
+    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id })));
   }
   if (p === '/synthesis' && req.method === 'GET') {
     return json(res, 200, db.synthesis ? [db.synthesis] : []); // PostgREST array mode, as supabase-js maybeSingle() sends
@@ -213,12 +278,14 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__log') return json(res, 200, log);
     if (url.pathname === '/__db') return json(res, 200, db);
     if (url.pathname.startsWith('/anthropic/')) return fakeAnthropic(req, res, await readBody(req));
+    if (url.pathname === '/__map') { mapMode = url.searchParams.get('m'); return json(res, 200, { mapMode }); }
+    if (url.pathname.startsWith('/supabase/storage/v1/')) return fakeStorage(req, res, url);
     if (url.pathname.startsWith('/supabase/auth/v1/')) return fakeAuth(req, res, url, await readBody(req));
     if (url.pathname.startsWith('/supabase/')) return fakeSupabase(req, res, url, await readBody(req));
-    if (url.pathname === '/api/summarize' || url.pathname === '/api/synthesize' || url.pathname === '/api/google-doc' || url.pathname === '/api/test-persona-submit') {
+    if (url.pathname === '/api/summarize' || url.pathname === '/api/map-pillars' || url.pathname === '/api/synthesize' || url.pathname === '/api/google-doc' || url.pathname === '/api/test-persona-submit') {
       const raw = await readBody(req);
       req.body = raw ? JSON.parse(raw) : undefined;
-      const handler=url.pathname.endsWith('summarize')?summarize:url.pathname.endsWith('google-doc')?googleDoc:url.pathname.endsWith('test-persona-submit')?testPersonaSubmit:synthesize;
+      const handler=url.pathname.endsWith('map-pillars')?mapPillars:url.pathname.endsWith('summarize')?summarize:url.pathname.endsWith('google-doc')?googleDoc:url.pathname.endsWith('test-persona-submit')?testPersonaSubmit:synthesize;
       return handler(req, vercelRes(res));
     }
     if (url.pathname === '/config.js') {

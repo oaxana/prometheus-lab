@@ -167,7 +167,7 @@ export default async function handler(req, res) {
     const db = supabase();
     const { data: rows, error } = await db
       .from('submissions')
-      .select('id, pillars, content, summary, is_test, created_at, display_name, participant_id, uid')
+      .select('id, pillars, pillar_choice, content, summary, is_test, created_at, display_name, participant_id, uid')
       .order('created_at', { ascending: true })
       .limit(1000);
     if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
@@ -206,7 +206,9 @@ export default async function handler(req, res) {
 
     const body = voices
       .map((s, i) => {
-        const names = (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
+        const names = s.pillar_choice === 'something_else' && !(s.pillars ?? []).length
+          ? 'none (the author says this fits no draft pillar)'
+          : (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
         const source = rowSources[i];
         return `<contribution n="${i + 1}" participant="${labelFor(personIndex.get(source.personKey))}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
       })

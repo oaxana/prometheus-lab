@@ -21,7 +21,7 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - The synthesis function's response shape is also what the frontend renders; change both together (and keep rendering of older saved shapes).
 - `tests/` has its own `package.json` so Vercel never installs Playwright/PGlite.
 
-## Identity architecture (local change, 2026-10-06)
+## Identity architecture (deployed 2026-10-06)
 - Real participants use Supabase passwordless email OTP. The SDK owns persistent/refreshing sessions; never manually store Auth tokens.
 - `participants.id = auth.users.id`; its only user field is one non-unique `display_name`. Email remains only in Supabase Auth.
 - Real submission creation, listing private text, deletion and test-flag changes go through security-definer RPCs that derive ownership from `auth.uid()`. Never accept a participant id or arbitrary per-row name from the browser.
@@ -30,14 +30,24 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - `count` in `synthesis` is distinct participants; `submission_count` is contribution rows.
 - Auth email delivery uses `supabase/functions/send-email`: a signed Send Email Hook that sends the OTP through Resend. Its three values (`RESEND_API_KEY`, `SEND_EMAIL_HOOK_SECRET`, `AUTH_EMAIL_FROM`) belong in Supabase Edge Function secrets, never Vercel or git.
 
+## Submission wizard (built 2026-10-07, not yet deployed)
+- The Submit tab (after email verification) is an 8-step wizard in `public/wizard.js` (state `W`, loaded **before** `app.js`; `render()` in `app.js` calls `wzSyncFields()` first and `wzAfterRender()` last). Server side: `api/map-pillars.js` (step 3) plus `noTag`/`contributionType` on `api/summarize.js`.
+- Reused existing columns instead of the brief's names: `pillars` = selected pillars, `content` = original text, `summary` = AI summary, `participant_id` = user id. New: `contribution_type`, `input_mode`, `pillar_choice`, `audio_url`, `file_url`, `file_name`, `discovery_input_id`, and the private table `pillar_discovery_inputs`. `audio_url`/`file_url` are storage **paths** (or a Google link) in the private bucket `submission-files`, owner-only.
+- **Deploy order:** owner runs the whole `supabase-setup.sql` first (it is backward-compatible with the old frontend), then push.
+- Typing does not redraw; gated fields call `wzLiveGate()` to enable/disable Next. Never paste a stored path/URL into an `onclick` string; look it up by submission id (`wzOpenStored`).
+- Voice transcription is the browser's `SpeechRecognition` (editable transcript); real transcription, real Storage and real model output for the new prompts are **unverified**: the tests use fakes.
+
 ## Where we left off (2026-10-06)
-The Resend sending domain, three Edge Function secrets, deployed `send-email` function, and live Supabase Send Email Hook are complete. A real six-digit OTP was delivered and verified through the local frontend. The verified-participant frontend/database changes are **not committed, pushed, migrated, or deployed**. A read-only live check confirmed that `participants` and `synthesis.submission_count` do not exist yet. Run `supabase-setup.sql` immediately before deploying the frontend because it disables the old browser-UID submission path. See README "Setup from scratch" and "Project status" for exact steps and deployment order.
+The verified-participant cutover is complete. The owner ran the full `supabase-setup.sql`; commit `adcfce8` was pushed to `main`; Vercel deployed it successfully; and the production alias is live. Post-deploy probes confirmed the crew gate returns `401` for the site, config, and every API without its cookie; the new submission RPC and synthesis column exist; and direct anonymous reads of private participant/submission tables are denied. Supabase Auth's project email quota was raised to 60/hour after the previous two-email/hour quota blocked testing; keep the per-user resend cooldown at 60 seconds.
+
+The hosted Account A smoke test passed: six-digit OTP verification, an `is_test` submission, owner-only raw text and controls, and persistence after refresh. One test row containing `Production ownership test — account A` intentionally remains in production for the cross-account check. The owner stopped before Account B and wants to resume in a new session.
 
 **Next up, in order**
-1. Complete the SQL/frontend cutover: confirm Vercel access/settings, run SQL, immediately deploy the frontend, then test persistence and ownership with two real emails.
+0. Owner: run `supabase-setup.sql`, tell me to commit/push the wizard, then try it live (README → "Not yet verified").
+1. Complete Account B using a second real email and separate browser session. Confirm Account B can see Account A's public summary but not its raw text, `yours` badge, test toggle, or delete control. Create/delete B's own test, then return to A and delete A's test.
 2. Run synthesis on multiple contributions from one real participant plus another anonymous participant; inspect the real model output and stored JSON for attribution/privacy.
 3. Privacy defense in depth: public summaries/saved synthesis are still reachable with the public Supabase key outside the crew gate, although production inserts and private content are now Auth-protected. Consider gated read APIs.
 4. Decide whether to raise AI text limits (8,000 summary / 6,000 synthesis characters per contribution).
-5. Monitor Anthropic/Resend usage as the crew grows; the Anthropic limit, Vercel `/__login` firewall rule, and Supabase Auth cooldown/expiry are confirmed configured.
+5. Monitor Anthropic/Resend usage as the crew grows; the Anthropic limit, Vercel `/__login` firewall rule, Supabase Auth cooldown/expiry, and 60-email/hour project quota are confirmed configured.
 
 Backlog ideas: parallel/durable synthesis orchestration as a separate future project (possibly Cloudflare Workers/Queues/Workflows; do not add it casually); trusted claiming of historical pre-Auth rows; "Clear saved synthesis"; separate models; `X-Frame-Options`/CSP; per-person crew access; export synthesis.

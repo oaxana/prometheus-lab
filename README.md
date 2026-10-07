@@ -3,7 +3,7 @@
 A private web app where a crew can contribute anonymous (or named) positions on how humans and AI should behave together, for the **Burning Man AI Constitution** project. Claude summarizes each submission and tags it to 12 constitutional pillars. The project lead can then run an AI **synthesis** that sorts everything into **The Commons** (where voices agree), **Contested Ground** (where they diverge, and who holds which position) and **The Gaps** (pillars nobody addressed).
 
 - **Live site:** https://prometheus-lab-xi.vercel.app (password-protected, crew only)
-- **Status:** the existing browser-UID version is deployed; the verified-participant version in this working tree is implemented and tested locally but awaits Supabase setup and deployment. See [Project status](#project-status--where-we-left-off).
+- **Status:** the verified-participant version is deployed in production. The first real-account smoke test passed; second-account isolation and final test-data cleanup remain. See [Project status](#project-status--where-we-left-off).
 - **Name history:** originally "The Fire Circle", renamed Prometheus Lab. Only the files in `docs/` still use the old name, on purpose.
 
 ---
@@ -33,8 +33,9 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 - **Password gate** on the landing page; nothing is reachable without it.
 - **Five tabs:** Home, Pillars, Submit, Voices, Synthesis.
 - **Pillars:** the 12 constitutional pillars with expandable sub-topics.
-- **Submit** by typing/pasting text, or by adding files: `.txt`, `.md`, `.docx`, `.pptx` (slide text in deck order plus speaker notes), `.pdf` (scanned PDFs are read by Claude), images (`.png`/`.jpg`, read by Claude vision), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view").
-- **Pillars optional:** pick 1–3, or skip and Claude auto-tags them.
+- **Submit** through an eight-step wizard (see below): settings → blank-slate topics → AI pillar mapping → format → the contribution → label → review → confirmation + your history. A contribution can be **typed**, **recorded** (voice note, transcribed in the browser; the recording is kept), or **uploaded**: `.pdf` (scanned PDFs are read by Claude), `.doc`/`.docx`, `.ppt`/`.pptx` (slide text in deck order plus speaker notes), images (`.png`/`.jpg`/`.gif`, read by Claude vision), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view"). Old binary `.doc`/`.ppt` files are stored but cannot be read in the browser, so the wizard asks for a short note instead.
+- **Pillars:** the wizard asks first what matters to *you* (before showing the draft pillars, to avoid anchoring), then Claude maps that answer onto the draft pillars and flags ideas that fit none. You can pick several pillars, "Not sure yet" (Claude picks), or "Something else entirely".
+- **Edit your past submissions** from the wizard's last step: your original text opens, and saving re-runs the AI summary.
 - **Verified participant, not an account workflow:** before a real contribution, enter an email and the Supabase one-time code. No password, username or onboarding. The normal Supabase session persists and refreshes on that browser.
 - **Anonymous by default**; optionally use one saved display name/handle. The email and Auth identity are never public and never sent to Claude.
 - **Voices:** a per-pillar coverage chart plus a card per submission showing the AI *summary*, tags and date. Auth ownership makes "yours", raw-text access, **mark/unmark as test**, and **delete** work after reload and on another device signed into the same email. Filters: "Show tests", "Mine only".
@@ -55,15 +56,18 @@ A private web app where a crew can contribute anonymous (or named) positions on 
    ├── auth ───────────► Supabase Auth (passwordless email OTP; persistent/refreshing session)
    │                         └── Send Email Hook → Supabase Edge Function → Resend
    ├── reads/writes ───► Supabase (Postgres) via public key + RLS + auth.uid()-owned RPC functions
+   ├── recordings/files ► Supabase Storage, private bucket "submission-files", one folder per participant
    │
    └── /api/* ─────────► Vercel serverless functions (Node)
-          ├─ summarize.js   → Claude (summary + pillar tags, one call per submission)
+          ├─ map-pillars.js → Claude (wizard step 3: maps a free-form answer onto the draft pillars)
+          ├─ summarize.js   → Claude (summary + pillar tags, one call per submission or edit)
           ├─ synthesize.js  → reads ALL submissions (service role) → replaces ids with per-run labels → Claude → stores result
           ├─ test-persona-submit.js → admin-key-checked, test-only persona create/delete
           └─ google-doc.js  → fetches Google's plain-text export of a shared Doc/Slides link
 ```
 
-- **Frontend:** no framework and no build step. `public/app.js` renders everything with template strings; file parsing happens in the browser (`mammoth` for .docx, `pdf.js` for .pdf, `JSZip` for .pptx).
+- **Frontend:** no framework and no build step. `public/app.js` renders everything with template strings; the Submit tab's wizard lives in `public/wizard.js` (loaded first; it uses `app.js` helpers at call time). File parsing happens in the browser (`mammoth` for .docx, `pdf.js` for .pdf, `JSZip` for .pptx). Icons are Tabler (CDN webfont, pinned version in `index.html`).
+- **Voice transcription** uses the browser's own speech service (`SpeechRecognition`: Google in Chrome, Apple in Safari; unavailable in Firefox). It is free and needs no new key, but the audio may pass through that vendor, and quality varies. The transcript is always editable and is what gets summarized; the audio is stored privately next to it.
 - **AI:** both Claude calls use **`claude-sonnet-5-5`** (one constant, `MODEL` in `api/_shared.js`). Summaries run at `low` effort, synthesis at `medium`. Both use structured JSON output, so the reply is always valid JSON.
 - **Live updates:** the page re-fetches every 20 seconds and when you return to the tab (no websockets).
 
@@ -72,13 +76,15 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 ```
 public/                  static site (this folder is what Vercel serves)
   index.html             page shell; loads CDN libraries
-  app.js                 the whole UI: render functions, file parsing, Supabase + API calls
+  app.js                 the UI: render functions, file parsing helpers, Supabase + API calls
+  wizard.js              the eight-step submission wizard (state `W`, recorder, uploader, history/edit)
   styles.css             design tokens + styles (dark primary, fire-amber accent, light via prefers-color-scheme)
   pillars.js             the 12 pillars (names, emoji, sub-topics)
   config.js              Supabase URL + anon key (public by design)
 api/                     Vercel serverless functions
   _shared.js             model name, pillar names, Claude client, error handling ("_" = not a route)
   summarize.js           POST: text/images/PDFs → { pillars, summary, autoTagged }
+  map-pillars.js         POST: free-form text → { matched, newIdeas, reasoning } (wizard step 3)
   synthesize.js          POST (admin key): builds + stores the commons/contested/gaps synthesis
   test-persona-submit.js POST (admin key): creates/deletes detached, test-only persona contributions
   google-doc.js          POST: Google Docs/Slides link → { name, kind, text }
@@ -118,7 +124,7 @@ You need free accounts at GitHub, Supabase, Anthropic (API billing) and Vercel, 
    3. Deploy `supabase/functions/send-email` with JWT verification disabled. This is safe because the function verifies Supabase's Standard Webhooks signature instead: `supabase functions deploy send-email --no-verify-jwt`.
    4. In **Authentication → Hooks → Send Email**, choose **HTTP** and use `https://YOUR-PROJECT-REF.supabase.co/functions/v1/send-email`.
    5. Activate the hook only after the Resend domain is verified, all three secrets are set, and the function is deployed. Test immediately with one project-team email and one ordinary external email.
-7. **Authentication → Rate Limits**: keep the built-in per-user OTP cooldown (60 seconds by default) and verification/IP limits enabled. Set the email/OTP quota high enough for the invited crew but keep the cooldown.
+7. **Authentication → Rate Limits**: keep the built-in per-user OTP cooldown (60 seconds by default) and verification/IP limits enabled. Production currently allows 60 Auth emails per hour; this project-level quota is customizable because the Send Email Hook is active.
 8. **Project Settings → API**: copy the **Project URL**, the **anon** key and the **service_role** key.
 9. Put the Project URL and anon key in `public/config.js`. The anon key is public by design; **never** put the service-role key there.
 
@@ -197,14 +203,19 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 **Tables** (see `supabase-setup.sql` for exact definitions)
 - `participants`: `id` (same UUID as `auth.users.id`), `display_name`, `created_at`, `updated_at`. It deliberately has no email column.
 - `submissions`: `id`, `pillars int[]` (1–12), `content` (≤100,000 chars, private), `summary`, `auto_tagged`, `is_test`, `participant_id` (private Auth owner), nullable legacy/test `uid`, public `display_name` snapshot (`''` means anonymous), `created_at`.
+- `pillar_discovery_inputs`: the wizard's step-2 answer (`participant_id`, `input_text`, `input_type` text/voice, `audio_url`, `ai_mapping` jsonb, `is_anonymous`, `is_test`). Private: no browser read path at all; only the RPCs below and the service-role key touch it, so it can be analysed independently of submissions.
+- Wizard columns on `submissions`: `contribution_type`, `input_mode` (text/voice/upload), `pillar_choice` (selected / not_sure / something_else), `audio_url`, `file_url`, `file_name`, `discovery_input_id`. `audio_url`/`file_url` hold a **storage path** (`<participant uuid>/<run>/<file>`), or for `file_url` a Google Docs/Slides link. They are returned only to the owner. (The original brief proposed `selected_pillars`, `original_text` and `synthesized_summary`; those are the existing `pillars`, `content` and `summary`, so they were not duplicated.)
 - `synthesis`: single row (`id = 1`): `commons`, `contested`, `gaps` (jsonb), `count` (distinct participants), `submission_count`, `included_tests`, `created_at`.
 
 **Functions** (the only normal browser write/read path for submissions; all `security definer`)
-- `submit_submission(...)` → row UUID; authenticated only, owner comes from `auth.uid()`, and named mode reads the saved profile name.
+- `submit_submission(...)` → row UUID; authenticated only, owner comes from `auth.uid()`, and named mode reads the saved profile name. The wizard fields are optional extras; file paths must be inside the caller's own storage folder (or a Google link) and a linked discovery input must be the caller's.
+- `save_discovery_input(...)` → discovery row UUID; creates (id null) or updates the caller's own step-2 answer.
+- `update_my_submission(id, content, summary, contribution_type)` → boolean; owner only. Used by the history "Edit".
+- Storage: bucket `submission-files` is private, 25 MB per file, allow-listed audio/document/image types. Policies let a participant read, upload and delete only inside the folder named after their own `auth.uid()`; there is no update policy, so files are never overwritten.
 - `set_my_display_name(name)` → saved name; authenticated only.
 - `list_submissions(p_test_uid default null)`: all public rows; real `mine`/`content` come only from `auth.uid()`. The optional value is restricted to participant-less test rows.
-- `delete_my_submission(id)` → boolean; authenticated ownership only.
-- `set_my_submission_test(id, is_test)` → boolean; Auth ownership only.
+- `delete_my_submission(id)` → boolean; authenticated ownership only. Also deletes the linked discovery input; the browser then removes the stored files.
+- `set_my_submission_test(id, is_test)` → boolean; Auth ownership only. The linked discovery input follows the flag.
 
 **Legacy migration behavior:** existing rows are preserved. Their old `uid` remains for synthesis grouping, but a legacy non-test `uid` can no longer be presented as proof of ownership. Therefore old production rows cannot expose raw text or be managed until an explicit, trusted migration/claim process is designed. Existing `is_test = true` persona/seed rows remain usable as tests.
 
@@ -220,11 +231,12 @@ Older saved results (plain-string positions, single `summary` per commons item) 
 
 ## API reference
 
-All four require the crew cookie (otherwise `401 {code:"crew_login"}`).
+All of them require the crew cookie (otherwise `401 {code:"crew_login"}`).
 
 | Endpoint | Body | Returns |
 |---|---|---|
-| `POST /api/summarize` | `{ text, selectedPillars?, attachments?: [{name, mediaType, data(base64)}] }` | `{ pillars, summary, autoTagged, attachmentsSkipped? }`. Text capped at 8,000 chars; ≤4 attachments, 3 MB total; images/PDFs only |
+| `POST /api/map-pillars` | `{ text }` | `{ matched: number[], newIdeas: string[], reasoning }`. Ids are validated against the pillar list; text capped at 8,000 chars. The browser falls back to the plain pillar grid if this fails |
+| `POST /api/summarize` | `{ text, selectedPillars?, noTag?, contributionType?, attachments?: [{name, mediaType, data(base64)}] }` | `{ pillars, summary, autoTagged, attachmentsSkipped? }`. Text capped at 8,000 chars; ≤4 attachments, 3 MB total; images/PDFs only |
 | `POST /api/synthesize` | `{ includeTests? }` + header `x-admin-key` | The synthesis (also stored). Reads up to 1,000 submissions, 6,000 chars each |
 | `POST /api/google-doc` | `{ url }` | `{ name, kind, text }`. Public Docs/Slides only |
 | `POST /api/test-persona-submit` | test contribution, or `{ persona, deleteId }`, plus header `x-admin-key` | Creates/deletes only forced-test, participant-less `Me` / `Persona 2` / `Persona 3` rows |
@@ -236,7 +248,7 @@ All suites live in `tests/` and need **no real Anthropic, Supabase or Google acc
 ```bash
 npm install                 # once, in the repo root (the tests import the API code)
 cd tests && npm install     # once; uses your installed Google Chrome (or: npx playwright install chromium, PW_CHANNEL=chromium)
-npm test                    # all 12 suites, ~2 min   (npm test -- persona  runs one)
+npm test                    # all 14 suites, ~3 min   (npm test -- persona  runs one)
 ```
 
 | Suite | Covers |
@@ -248,34 +260,42 @@ npm test                    # all 12 suites, ~2 min   (npm test -- persona  runs
 | `app.e2e.mjs` | OTP verification, persisted session, submit, privacy between users, filters, synthesis, light/dark |
 | `delete.e2e` / `mark-test.e2e` | delete and mark-as-test buttons |
 | `persona.e2e.mjs` | detached test personas, per-participant attribution, anonymous counts, legacy output |
-| `files.e2e.mjs` | .pptx (order, notes), Google links, what the AI actually receives |
+| `files.e2e.mjs` | upload step: .pptx (order, notes), unreadable .ppt needing a note, Google links, images, what the AI actually receives, what gets stored |
+| `wizard.e2e.mjs` | all eight steps: gating, amber toggles, AI mapping + failure fallback, voice recording (Chrome's fake microphone + a fake speech service), review/edit jumps, history edit, storage privacy, delete cleanup, mobile/desktop layout |
+| `sql-wizard.test.mjs` | discovery-input privacy, file-path ownership rules, owner-only fields, edit/delete/test-flag cascades, private storage bucket + policies |
 
-**What the tests do NOT prove:** the fakes return canned model replies, so they cannot tell you whether the *real* Claude produces good synthesis output. That needs a manual run (see status below).
+**What the tests do NOT prove:** the fakes return canned model replies, so they cannot tell you whether the *real* Claude produces good synthesis output, a good pillar mapping, or good summaries. They also cannot prove real **speech transcription** (the fake microphone makes a beep and a fake speech service supplies the words) or the real **Supabase Storage** service (a fake enforces the same folder rule). Those need a manual run on a real phone and laptop (see status below).
 
 ## Project status / where we left off
 
 *Last updated: 2026-10-06.*
 
-**Configured and verified in live Supabase:** the Resend sending domain is verified; the signed `send-email` Edge Function is deployed; all three function secrets are present; the Send Email Hook is active; and a real six-digit OTP was delivered and successfully verified. Supabase Auth also has the production Site URL, redirect URLs, 60-second resend cooldown, one-hour expiry, email confirmations, and six-digit OTP length configured.
+**Configured and verified in live Supabase:** the Resend sending domain is verified; the signed `send-email` Edge Function is deployed; all three function secrets are present; the Send Email Hook is active; and real six-digit OTPs are delivered and verify successfully. Supabase Auth also has the production Site URL, redirect URLs, 60-second per-user resend cooldown, one-hour expiry, email confirmations, six-digit OTP length, and a project-level Auth email limit of 60 per hour configured.
 
-**Implemented locally, not deployed:** verified-participant frontend, Auth-owned submission RPCs, saved display names, detached test personas, and distinct-participant synthesis labeling. The database migration has not been applied: the live database still lacks `participants` and `synthesis.submission_count`. Run `supabase-setup.sql` immediately before deploying this frontend because the migration intentionally disables the old browser-UID submission path. No commit, push, SQL migration, or frontend deployment was made in this work session.
+**Deployed on 2026-10-06:** commit `adcfce8` added the verified-participant frontend, Auth-owned submission RPCs, saved display names, detached test personas, and distinct-participant synthesis labeling. The complete `supabase-setup.sql` migration was applied first, then `main` was pushed and Vercel deployed successfully. The production alias points to the new deployment.
 
-**Previously deployed:** the browser-UID version in git `HEAD` remains live until the owner explicitly deploys these local changes.
+**Post-deploy checks passed:** unauthenticated requests to `/`, `/config.js`, `/api/summarize`, `/api/synthesize`, and `/api/test-persona-submit` all return `401`. The migrated `list_submissions` RPC responds successfully, `synthesis.submission_count` exists, and direct anonymous access to `participants` and `submissions` is denied.
 
-**Verified against the real services:** site is up and gated; `/api/summarize` returns real summaries and tags; admin lock works; the Resend hook delivers a working six-digit OTP; required Vercel production environment variables are present; and the `/__login` firewall rule is live at 10 requests per 60 seconds. The owner also confirmed the Anthropic spending limit. The Google Slides export URL pattern works on a real public deck. The new participant SQL is intentionally not live yet.
+**Verified against the real services:** site is up and gated; `/api/summarize` returns real summaries and tags; admin lock works; required Vercel production environment variables are present; and the `/__login` firewall rule is live at 10 requests per 60 seconds. The owner confirmed the Anthropic spending limit. The first hosted participant test passed end to end: production OTP verification, test submission, ownership badge and controls, raw-text visibility for its owner, and session/submission persistence after refresh. The Google Slides export URL pattern also works on a real public deck.
+
+**Intentional test data left in production:** one `is_test = true` row with source text `Production ownership test — account A` remains so second-account isolation can be checked next session. Delete it from Account A after that check.
+
+**Submission wizard (built 2026-10-07, NOT yet deployed):** the Submit tab is now an eight-step wizard (`public/wizard.js`, `api/map-pillars.js`, new SQL). It is backward-compatible with the old frontend, so the order is: (1) run the full `supabase-setup.sql` in the Supabase SQL Editor, (2) push. It passes all 14 local suites, but nothing in it has run against the real Anthropic, Supabase Storage or a real microphone yet.
 
 **Not yet verified (please check)**
-- [ ] The new SQL and hosted verified-participant frontend; verify reload persistence, sign-out, and sign-in from a second browser after deployment. Real OTP delivery and verification are already confirmed through the local frontend against live Supabase.
-- [ ] Auth-owned raw-text/delete isolation with two real test emails in the hosted app.
+- [ ] **Wizard on the live site** (after the SQL is run): a full text submission; a voice note on a phone *and* a laptop (Chrome and Safari: does the transcript appear? If it doesn't, the box is still editable); a PDF, a `.docx` and a `.pptx` upload; a Google Doc; editing a past submission; deleting one (check the file also leaves **Supabase → Storage → submission-files**).
+- [ ] **Real model quality for the new prompts:** step-3 pillar mapping (are matches sensible? are "new ideas" really new?) and the revised summary prompt (it now mentions the chosen pillars and label).
+- [ ] The Storage bucket exists after running the SQL (**Supabase → Storage → submission-files**, shown as *Private*).
+- [ ] Complete the hosted Account B test with a second real email: Account B may see Account A's public summary but must not see its raw text, `yours` badge, test toggle, or delete control. Then delete both manual test rows from their owning sessions.
+- [ ] Verify explicit sign-out and sign-in from a second browser/device. Account A refresh persistence is confirmed.
 - [ ] The **new synthesis prompts/layout with the real model** (attribution, bulleted Commons/Contested/Gaps, "N anonymous"). Run synthesis on the seed data and review the output.
 - [ ] A real **Google Doc** link end to end (Slides is confirmed; Docs uses the same mechanism but wasn't tried on a live doc).
 - [ ] A real **.pptx** and **.docx** upload in the live app.
-- [ ] The raw-text privacy check with real rows (the table was empty when checked): a direct read of `submissions` with the anon key should return `[]` even when rows exist.
 
 **Open to-do list (roughly in priority order)**
-1. **Perform the SQL/frontend cutover:** run `supabase-setup.sql`, deploy the new frontend immediately afterward, then test with two real email addresses. The Resend/Auth Hook portion is complete and live.
+1. **Finish the second-account production check and cleanup:** use another real email/browser session to verify cross-participant raw-text and ownership isolation, delete Account B's test from B, then delete Account A's test from A.
 2. **Privacy defense in depth:** real inserts and private reads are Auth-protected, but public summaries/names/synthesis remain callable with the public key outside the crew-password gate. Consider making the repo private and/or proxying public reads through gated Vercel endpoints.
-3. **Monitor operational limits:** the Anthropic spend limit, Vercel login firewall rule, Supabase Auth cooldown/expiry, and Resend delivery are configured; review usage if the crew or traffic grows.
+3. **Monitor operational limits:** the Anthropic spend limit, Vercel login firewall rule, Supabase Auth cooldown/expiry, 60-email/hour project limit, and Resend delivery are configured; review usage if the crew or traffic grows.
 4. **Decide on the AI text limits** (8,000 chars per submission for summaries, 6,000 chars per submission for synthesis).
 5. **Clean up test data** before sharing widely (`delete from public.submissions where uid like 'demo-voter-%' or uid like 'test-persona-%';` plus any manual test rows), then share `SITE_PASSWORD` with the crew only.
 
@@ -293,6 +313,11 @@ Why things are the way they are (including where we departed from the original s
 - **Polling every 20 s instead of realtime**, because browsers can't subscribe to a table they're not allowed to read.
 - **Bugs in the original prototype that were fixed:** the AI step never ran (`imgBlobs` used before definition); typed text vanished on re-render; synthesis output was injected as raw HTML (now escaped).
 - **One participant = one synthesis voice.** Stable ids are grouped only on the server, converted to run-local labels for Claude, then mapped to a saved public name or a distinct anonymous count. No stable id or email reaches Claude or the saved result.
+- **The wizard keeps the existing data model instead of the brief's column names.** The brief asked for `selected_pillars`, `original_text` and `synthesized_summary`; those already exist as `pillars`, `content` and `summary`, so only genuinely new columns were added. The brief's `user_id` is `participant_id`, matching the identity architecture. The brief assumed Next.js/React; the app is plain JS, so the wizard is vanilla JS in `public/wizard.js` and the brief's `lib/pillars.ts` is the existing `public/pillars.js` + `api/_shared.js`.
+- **Blank-slate answer first, then pillars.** Step 2 is stored in its own private table *before* the draft pillars appear, so it can be analysed without anchoring bias. Deleting a submission deletes its linked step-2 answer too.
+- **Voice = browser transcription + private audio.** Claude cannot transcribe audio, and a paid speech service would be a new vendor, key and privacy decision. The browser's built-in speech service needs nothing new; the transcript is editable. Swap in a server-side service later if quality or Firefox support matters.
+- **Files go to private Supabase Storage, text goes to Claude.** The browser extracts text (as before) and stores the original file in a per-participant folder that only that participant can read; the database holds the path.
+- **"Not sure yet" lets Claude pick pillars** (the old auto-tag); "Something else entirely" leaves pillars empty and tells synthesis the author said nothing fits.
 - **"Mark as test" instead of only "Delete"**: reversible, which suits heavy testing.
 - **Google links are fetched server-side** (browsers are blocked by CORS) with strict host allow-listing.
 - **Tests live in `tests/` with their own `package.json`**, so Vercel never installs Playwright/PGlite.
@@ -303,8 +328,12 @@ Why things are the way they are (including where we departed from the original s
 - Voices update every ~20 s, not instantly.
 - "Yours" follows the verified Auth identity. Another device can manage the same rows after verifying the same email; clearing site data requires verifying again.
 - Deleting or re-flagging a voice doesn't change an already-saved synthesis until it is re-run.
-- Images inside slides/docs aren't read (only text). Legacy `.ppt`/Keynote must be saved as `.pptx`.
-- More than 4 image/PDF attachments in one submission makes the AI step fall back to a plain 200-character summary.
+- Images inside slides/docs aren't read (only text). Legacy `.ppt`/`.doc` (and Keynote) are stored but not readable, so the wizard asks for a short note; for the AI, save as `.pptx`/`.docx`.
+- An upload is one file or one Google link per contribution (the old form allowed several).
+- Voice transcription depends on the visitor's browser (works in Chrome and Safari, not Firefox) and may send audio to Google/Apple. Recordings are capped at 10 minutes. Editing a past voice/upload submission edits the text only; the original audio/file stays attached.
+- Recordings/files uploaded in a wizard run that is abandoned before submitting are left in storage (private, small); they can be cleaned up from the Supabase Storage page.
+- Unreadable files and scanned PDFs over 3 MB are stored but not sent to the AI; the summary then comes from your note alone.
+- "Something else entirely" submissions have no pillar, so synthesis files them under no pillar (the model is told they fit none); there is no dedicated "new territory" section in the synthesis yet.
 - Synthesis reads at most 1,000 submissions and has a 60 s function limit; a very large run could time out on Vercel's free plan.
 - Supabase's free tier can pause an inactive project; unpause it in the dashboard.
 - The crew password is shared; rotation is the only revocation.

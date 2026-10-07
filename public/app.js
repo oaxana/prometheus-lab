@@ -4,11 +4,11 @@ const MAX_CONTENT_CHARS=100000;           // matches the CHECK constraint in sup
 const MAX_ATTACH_BYTES=3*1024*1024;       // matches api/summarize.js (Vercel request limit is 4.5 MB)
 const POLL_MS=20000;
 
-let S={view:'home',submissions:[],synthesis:null,selectedPillars:new Set(),isOwner:false,
-  synthesizing:false,submitting:false,anonymous:true,attachedFiles:[],attachedText:'',displayName:'',
-  isTest:false,showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
-  loaded:false,persona:0,gdocUrl:'',gdocBusy:false,authReady:false,session:null,participantName:'',
-  authEmail:'',otpSent:false,authBusy:false,authError:''};
+let S={view:'home',submissions:[],synthesis:null,isOwner:false,
+  synthesizing:false,displayName:'',
+  showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
+  loaded:false,persona:0,authReady:false,session:null,participantName:'',
+  authEmail:'',otpSent:false,authBusy:false,authError:''};   // the Submit tab's wizard state lives in W (wizard.js)
 let sb=null,adminKey='';
 
 // ---------- Supabase participant session + admin key ----------
@@ -28,7 +28,10 @@ async function api(path,body,headers){
   return data;
 }
 function mapSubmission(r){return{id:r.id,pillars:r.pillars||[],summary:r.summary,autoTagged:r.auto_tagged,isTest:r.is_test,
-  displayName:r.display_name,timestamp:r.timestamp,mine:r.mine,content:r.content};}
+  displayName:r.display_name,timestamp:r.timestamp,mine:r.mine,content:r.content,
+  // owner-only (null for everyone else): wizard metadata and private storage paths
+  contributionType:r.contribution_type,inputMode:r.input_mode,pillarChoice:r.pillar_choice,
+  audioUrl:r.audio_url,fileUrl:r.file_url,fileName:r.file_name,discoveryAudioUrl:r.discovery_audio_url};}
 function mapSynthesis(r){return r?{commons:r.commons||[],contested:r.contested||[],gaps:r.gaps||[],
   timestamp:Date.parse(r.created_at),count:r.count,submissionCount:r.submission_count,includedTests:r.included_tests}:null;}
 
@@ -71,7 +74,7 @@ async function init(){
     if(error)console.error(error);
     await syncSession(data?.session||null);
     sb.auth.onAuthStateChange((_event,session)=>setTimeout(()=>syncSession(session),0));
-    setInterval(()=>{if(!document.hidden&&!S.submitting&&!S.synthesizing)refresh();},POLL_MS);
+    setInterval(()=>{if(!document.hidden&&!W.submitting&&!S.synthesizing)refresh();},POLL_MS);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
   }else S.authReady=true;
   render();
@@ -101,7 +104,7 @@ async function signOutParticipant(){
   if(!confirm('Sign out on this device?'))return;
   const {error}=await sb.auth.signOut();
   if(error)return alert('Error: '+error.message);
-  S.session=null;S.participantName='';S.displayName='';S.anonymous=true;S.otpSent=false;S.authEmail='';
+  S.session=null;S.participantName='';S.displayName='';S.otpSent=false;S.authEmail='';wzReset();
   await refresh();render();
 }
 async function saveParticipantName(name){
@@ -117,15 +120,18 @@ async function editDisplayName(){
   try{await saveParticipantName(name);await refresh();render();showToast('Display name saved');}
   catch(e){alert('Error: '+(e.message||'could not save name'));}
 }
-function nav(v){S.view=v;render();window.scrollTo(0,0)}
+function nav(v){
+  if(v!=='submit')wzStopAllRec();                 // a recording never keeps running behind another tab
+  if(v==='submit'&&W.step===8)wzReset();          // coming back after a submission starts a fresh one
+  S.view=v;render();window.scrollTo(0,0)}
 function filteredSubs(){let s=S.submissions;if(!S.showTests)s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(x=>x.mine);return s;}
 function setupNeeded(m){m.innerHTML=`<div class="card"><h3>Setup needed</h3><p style="font-size:14px;color:var(--muted)">This app isn't connected to a database yet. Add your Supabase URL and anon key to <strong>public/config.js</strong>, then reload.</p></div>`;}
 
 function render(){
   // Keep whatever is typed in the form across re-renders.
-  const t=document.getElementById('voice-text');if(t)S.attachedText=t.value;
   const n=document.getElementById('display-name');if(n)S.displayName=n.value;
-  const g=document.getElementById('gdoc-url');if(g)S.gdocUrl=g.value;
+  wzSyncFields();
+  const fk=document.activeElement?.dataset?.fk;   // keyboard users keep their place after a redraw
   document.getElementById('nav').innerHTML=[
     {id:'home',label:'Home',icon:'🔥'},{id:'pillars',label:'Pillars',icon:'📋'},
     {id:'submit',label:'Submit',icon:'✍️'},{id:'voices',label:'Voices',icon:'👁'},
@@ -133,7 +139,8 @@ function render(){
   ].map(t=>`<button class="${S.view===t.id?'active':''}" onclick="nav('${t.id}')">${t.icon} ${t.label}</button>`).join('');
   const m=document.getElementById('main');
   ({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis})[S.view]?.(m);
-  if(S.view==='submit')setupDropZone();
+  if(S.view==='submit')wzAfterRender();
+  if(fk)document.querySelector(`#main [data-fk="${fk}"]`)?.focus({preventScroll:true});
 }
 
 function renderHome(m){
@@ -169,29 +176,12 @@ function renderSubmit(m){
       :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
     </div>`;return;
   }
-  const chips=PILLARS.map(p=>`<button class="pillar-chip ${S.selectedPillars.has(p.id)?'selected':''}" onclick="togglePillar(${p.id})"><span class="emoji">${p.emoji}</span>${p.name}</button>`).join('');
-  const fc=S.attachedFiles.map((f,i)=>`<div class="file-preview"><span>${f.type==='image'?'🖼️':'📄'}</span><span class="name">${esc(f.name)}</span><span style="color:var(--muted);font-size:11px">${f.type==='image'?'image':((f.text.length/1000).toFixed(0)+'k chars')}</span><button class="remove" onclick="removeFile(${i})">✕</button></div>`).join('');
   const personaRow=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
   const identity=S.persona
     ?`<div class="auth-status test-status"><span>🧪 Test persona: <strong>${esc(PERSONAS[S.persona].label)}</strong></span><span>Always excluded unless tests are included</span></div>`
     :`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;
-  const naming=S.persona
-    ?`<div class="form-row"><span class="toggle-row">Submitting as <strong>${esc(PERSONAS[S.persona].label)}</strong></span></div>`
-    :`<div class="form-row"><div class="toggle-row" onclick="toggleAnon()"><div class="toggle ${S.anonymous?'on':''}"></div><span>Anonymous</span></div>
-      ${!S.anonymous?(S.participantName?`<span class="chosen-name">Submit as <strong>${esc(S.participantName)}</strong></span>`:`<input type="text" id="display-name" maxlength="80" placeholder="Choose one name or handle" value="${esc(S.displayName)}">`):''}</div>`;
-  m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>${personaRow}${identity}
-  <div class="drop-zone" id="drop-zone"><input type="file" accept=".txt,.docx,.pptx,.md,.rtf,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" multiple onchange="handleFiles(this.files);this.value=''"><span class="icon">📂</span><span class="label">Drop files here or <strong>browse</strong><br><span style="font-size:12px;color:var(--muted)">.txt, .docx, .pptx, .pdf, .png, .jpg</span></span></div>${fc}
-  <div class="form-row" style="margin:0 0 6px"><input type="text" id="gdoc-url" placeholder="Or paste a Google Docs / Slides link" value="${esc(S.gdocUrl)}" onkeydown="if(event.key==='Enter')addGoogleLink()"><button class="btn btn-secondary" style="padding:10px 18px;font-size:14px" onclick="addGoogleLink()" ${S.gdocBusy?'disabled':''}>${S.gdocBusy?'Adding…':'Add'}</button></div>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Google files must be shared as “Anyone with the link can view”.</p>
-  <div class="or-divider">or write / paste below</div>
-  <textarea id="voice-text" placeholder="What do you believe? What behaviors should the constitution enshrine? Paste from a doc, brain-dump, or write a sentence.">${esc(S.attachedText)}</textarea>
-  <h3 style="margin-top:20px">Pillars <span style="font-weight:400;color:var(--muted);font-size:13px">(optional — AI auto-detects if you skip)</span></h3>
-  <div class="pillar-grid">${chips}</div>
-  ${naming}
-  ${S.persona?'':`<div class="form-row"><div class="toggle-row" onclick="S.isTest=!S.isTest;render()"><div class="toggle toggle-sm ${S.isTest?'on':''}" style="${S.isTest?'background:var(--muted)':''}"></div><span>Test submission</span></div>
-  ${S.isTest?'<span style="font-size:11px;color:var(--muted)">Excluded from synthesis by default</span>':''}</div>`}
-  ${S.submitting?'<div class="loading"><div class="spinner"></div>Processing your voice...</div>'
-  :`<button class="btn btn-primary" onclick="submitVoice()">Submit</button>`}`;
+  m.innerHTML=`${personaRow}${identity}<div id="wz-root"></div>`;
+  renderWizard(document.getElementById('wz-root'));
 }
 
 function renderVoices(m){
@@ -287,22 +277,14 @@ function renderSynthesis(m){
 function unlockAdmin(){const k=prompt('Project-lead key:');if(!k)return;adminKey=k.trim();saveAdminKey(adminKey);S.isOwner=true;render();}
 function lockAdmin(){adminKey='';saveAdminKey('');S.isOwner=false;setPersona(0);}
 function setPersona(n){
-  // Keep what was typed, but drop the on-screen name box so render() can't copy the previous persona's name back over the new one.
-  const t=document.getElementById('voice-text');if(t)S.attachedText=t.value;
+  // Keep what was typed, but drop the on-screen name box so render() can't copy a stale name back over the new state.
+  wzSyncFields();
   document.getElementById('display-name')?.remove();
-  const wasLabel=Object.values(PERSONAS).some(p=>p.label===S.displayName);
   S.persona=n;savePersona(n);
-  S.isTest=!!n;   // every fake persona is permanently test-only
-  if(n){S.anonymous=false;S.displayName=PERSONAS[n].label;}
-  else if(wasLabel){S.displayName=S.participantName;S.anonymous=true;S.isTest=false;}
+  if(!n)S.displayName=S.participantName;
   render();refresh();}
 
 // ---------- files ----------
-function setupDropZone(){const dz=document.getElementById('drop-zone');if(!dz)return;
-  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover')});
-  dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
-  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');handleFiles(e.dataTransfer.files)});}
-
 function blobToBase64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});}
 // Shrink photos before upload (phone photos are often 5+ MB; the API request limit is 4.5 MB).
 async function imageToJpegBase64(file,maxDim=1600){
@@ -314,35 +296,25 @@ async function imageToJpegBase64(file,maxDim=1600){
   return blobToBase64(blob);
 }
 const b64Bytes=s=>s.length*3/4;
-function attachedBytes(){return S.attachedFiles.reduce((n,f)=>n+(f.data?b64Bytes(f.data):0),0);}
 
-async function handleFiles(files){for(const file of files){try{
-  const isImg=file.type.startsWith('image/')||/\.(png|jpe?g|gif|webp)$/i.test(file.name);
-  const isPdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name);
-  if(isImg){
-    let data;try{data=await imageToJpegBase64(file);}catch(e){showToast('Could not read '+file.name+' as an image');continue;}
-    if(attachedBytes()+b64Bytes(data)>MAX_ATTACH_BYTES){showToast(file.name+' is too large to add. Try a smaller image.');continue;}
-    S.attachedFiles.push({name:file.name,text:'[Image: '+file.name+']',type:'image',mediaType:'image/jpeg',data});
-  }else if(isPdf){
-    let text='';const buf=await file.arrayBuffer();
-    try{const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf.slice(0))}).promise;
-      for(let i=1;i<=pdf.numPages;i++){const pg=await pdf.getPage(i);const tc=await pg.getTextContent();text+=tc.items.map(x=>x.str).join(' ')+'\n';}}catch(pe){console.error('PDF parse:',pe);}
-    if(text.trim()){S.attachedFiles.push({name:file.name,text:text.trim(),type:'text'});}
-    else{ // scanned PDF: let Claude read it directly
+// Pulls text out of one chosen file (and, for photos and scanned PDFs, an image Claude can read directly).
+// Old binary .doc/.ppt can't be read in the browser: they come back empty and the wizard asks for a note instead.
+async function readAttachment(file,ext){
+  const out={text:'',ai:null};
+  if(/^(png|jpe?g|gif)$/.test(ext)){
+    const data=await imageToJpegBase64(file);   // shrinks phone photos; the API request limit is 4.5 MB
+    if(b64Bytes(data)<=MAX_ATTACH_BYTES)out.ai={mediaType:'image/jpeg',data};
+  }else if(ext==='pdf'){
+    try{const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+      for(let i=1;i<=pdf.numPages;i++){const tc=await(await pdf.getPage(i)).getTextContent();out.text+=tc.items.map(x=>x.str).join(' ')+'\n';}}
+    catch(pe){console.error('PDF parse:',pe);}
+    out.text=out.text.trim();
+    if(!out.text){ // scanned PDF: let Claude read it directly
       const data=await blobToBase64(file);
-      if(attachedBytes()+b64Bytes(data)>MAX_ATTACH_BYTES){showToast(file.name+' has no selectable text and is too large to analyze. Try pasting instead.');continue;}
-      S.attachedFiles.push({name:file.name,text:'[PDF: '+file.name+' — will be analyzed as image]',type:'image',mediaType:'application/pdf',data});}
-  }else if(/\.pptx$/i.test(file.name)){
-    const text=await pptxToText(file);
-    if(text)S.attachedFiles.push({name:file.name,text,type:'text'});else showToast('No text found in '+file.name);
-  }else if(/\.(ppt|key|odp)$/i.test(file.name)){
-    showToast(file.name+': please save it as .pptx (or paste a Google Slides link)');
-  }else if(file.name.endsWith('.docx')){
-    const buf=await file.arrayBuffer();const r=await mammoth.extractRawText({arrayBuffer:buf});
-    if(r.value.trim())S.attachedFiles.push({name:file.name,text:r.value.trim(),type:'text'});
-  }else{const text=await file.text();
-    if(text.trim())S.attachedFiles.push({name:file.name,text:text.trim(),type:'text'});
-  }}catch(e){console.error(e);alert('Could not read '+file.name+'. Try pasting instead.');}}render();}
+      if(b64Bytes(data)<=MAX_ATTACH_BYTES)out.ai={mediaType:'application/pdf',data};}
+  }else if(ext==='pptx')out.text=await pptxToText(file);
+  else if(ext==='docx')out.text=(await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()})).value.trim();
+  return out;}
 // ---- PowerPoint (.pptx is a zip of XML): slide text in presentation order, plus speaker notes ----
 const DML='http://schemas.openxmlformats.org/drawingml/2006/main',REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const xml=str=>new DOMParser().parseFromString(str,'application/xml');
@@ -370,20 +342,6 @@ async function pptxToText(file){
     if(lines.length||notes.length)out.push(`Slide ${i}\n${lines.join('\n')}${notes.length?`\nSpeaker notes: ${notes.join(' ')}`:''}`);}
   return out.join('\n\n');}
 
-// ---- Google Docs / Slides link (the server fetches Google's text export) ----
-async function addGoogleLink(){
-  const el=document.getElementById('gdoc-url');const url=(el?el.value:S.gdocUrl).trim();
-  if(!url||S.gdocBusy)return;
-  if(!/^https:\/\/docs\.google\.com\/.*(document|presentation)\/d\//.test(url))return showToast('That doesn’t look like a Google Docs or Slides link');
-  S.gdocUrl=url;S.gdocBusy=true;render();
-  try{const r=await api('/api/google-doc',{url});
-    S.attachedFiles.push({name:(r.kind==='presentation'?'Slides: ':'Doc: ')+r.name,text:r.text,type:'text'});S.gdocUrl='';
-    const box=document.getElementById('gdoc-url');if(box)box.value='';   // render() copies the box back into state, so clear the box too
-  }catch(e){showToast(e.message||'Could not read that Google file');}
-  S.gdocBusy=false;render();}
-function removeFile(i){S.attachedFiles.splice(i,1);render()}
-function togglePillar(id){S.selectedPillars.has(id)?S.selectedPillars.delete(id):S.selectedPillars.add(id);render()}
-function toggleAnon(){S.anonymous=!S.anonymous;render()}
 function togglePillarRef(id){S.openPillars.has(id)?S.openPillars.delete(id):S.openPillars.add(id);render()}
 function toggleAllPillars(){if(S.openPillars.size===PILLARS.length)S.openPillars.clear();else PILLARS.forEach(p=>S.openPillars.add(p.id));render();}
 async function setTestFlag(id,flag){
@@ -396,6 +354,8 @@ async function setTestFlag(id,flag){
   }catch(e){alert('Error: '+(e.message||'could not update'));}}
 async function deleteMine(id){
   if(!confirm('Delete this submission? This cannot be undone.'))return;
+  const mineRow=S.submissions.find(x=>x.id===id);
+  const stored=[mineRow?.audioUrl,mineRow?.fileUrl,mineRow?.discoveryAudioUrl].filter(p=>p&&!/^https:/.test(p));
   try{
     let deleted=false;
     if(S.persona){
@@ -407,49 +367,11 @@ async function deleteMine(id){
       deleted=data===true;
     }
     if(!deleted){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
+    if(stored.length)sb.storage.from(WZ_BUCKET).remove(stored).then(({error})=>{if(error)console.error('Could not remove stored files:',error);});
     S.openRaw.delete('raw-'+id);
     await refresh();render();showToast('Your submission was deleted');
   }catch(e){alert('Error: '+(e.message||'could not delete'));}}
 function toggleRaw(id){S.openRaw.has(id)?S.openRaw.delete(id):S.openRaw.add(id);document.getElementById(id)?.classList.toggle('show');}
-
-// ---------- submit ----------
-async function submitVoice(){
-  if(S.submitting)return;
-  if(!S.persona&&!S.session)return alert('Verify your email before contributing.');
-  const textEl=document.getElementById('voice-text');const typed=textEl?.value?.trim()||'';
-  const nameEl=document.getElementById('display-name');
-  const textFiles=S.attachedFiles.filter(f=>f.type!=='image');
-  const imageFiles=S.attachedFiles.filter(f=>f.type==='image');
-  const fileTexts=textFiles.map(f=>`[From: ${f.name}]\n${f.text}`).join('\n\n');
-  const imageLabels=imageFiles.map(f=>`[Attached image: ${f.name}]`).join('\n');
-  const fullText=[typed,fileTexts,imageLabels].filter(Boolean).join('\n\n');
-  if(!fullText)return alert('Please write something or attach a file.');
-  if(fullText.length>MAX_CONTENT_CHARS)return alert('That is too long ('+fullText.length.toLocaleString()+' characters). The limit is '+MAX_CONTENT_CHARS.toLocaleString()+'. Try trimming it.');
-  S.attachedText=typed;S.submitting=true;render();
-  let pillars=[...S.selectedPillars].sort((a,b)=>a-b),autoTagged=false,summary='';
-  // One server call: summarize + (if no pillars were picked) auto-tag. The Anthropic key stays on the server.
-  try{
-    const r=await api('/api/summarize',{text:fullText,selectedPillars:pillars,
-      attachments:imageFiles.map(f=>({name:f.name,mediaType:f.mediaType,data:f.data}))});
-    if(r.attachmentsSkipped)showToast('Image analysis unavailable — analyzed text only');
-    if(Array.isArray(r.pillars)&&r.pillars.length){pillars=r.pillars;autoTagged=!!r.autoTagged;}
-    if(r.summary)summary=r.summary;
-  }catch(e){console.error('AI processing:',e);showToast('AI analysis: '+(e.message||'error'));}
-  if(!summary)summary=fullText.slice(0,200)+(fullText.length>200?'…':'');
-  try{
-    if(S.persona){
-      await api('/api/test-persona-submit',{persona:S.persona,pillars,content:fullText,summary,autoTagged},{'x-admin-key':adminKey});
-    }else{
-      if(!S.anonymous&&!S.participantName)await saveParticipantName(nameEl?.value||S.displayName);
-      const {error}=await sb.rpc('submit_submission',{p_pillars:pillars,p_content:fullText,p_summary:summary,
-        p_auto_tagged:autoTagged,p_is_test:S.isTest,p_anonymous:S.anonymous});
-      if(error)throw error;
-    }
-    S.selectedPillars=new Set();S.attachedFiles=[];S.attachedText='';S.displayName=S.persona?PERSONAS[S.persona].label:S.participantName;S.submitting=false;
-    const wasTest=S.persona||S.isTest;S.isTest=!!S.persona;
-    await refresh();
-    showToast(wasTest?'Test submission saved':'Your voice has been added to the fire');nav('voices');
-  }catch(e){S.submitting=false;render();alert('Error: '+(e.message||e.code||'could not save'));}}
 
 // ---------- synthesis (project lead) ----------
 async function runSynthesis(){
