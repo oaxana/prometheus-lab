@@ -280,7 +280,7 @@ npm test                    # all 14 suites, ~3 min   (npm test -- persona  runs
 
 **Intentional test data left in production:** one `is_test = true` row with source text `Production ownership test — account A` remains so second-account isolation can be checked next session. Delete it from Account A after that check.
 
-**Submission wizard (built 2026-10-07, NOT yet deployed):** the Submit tab is now an eight-step wizard (`public/wizard.js`, `api/map-pillars.js`, new SQL). It is backward-compatible with the old frontend, so the order is: (1) run the full `supabase-setup.sql` in the Supabase SQL Editor, (2) push. It passes all 14 local suites, but nothing in it has run against the real Anthropic, Supabase Storage or a real microphone yet.
+**Submission wizard (deployed 2026-10-07, commit `a404dfa`; SQL already run, site still gated):** the Submit tab is now an eight-step wizard (`public/wizard.js`, `api/map-pillars.js`, new SQL). It passes all 14 local suites, but nothing in it has run against the real Anthropic, Supabase Storage or a real microphone yet.
 
 **Not yet verified (please check)**
 - [ ] **Wizard on the live site** (after the SQL is run): a full text submission; a voice note on a phone *and* a laptop (Chrome and Safari: does the transcript appear? If it doesn't, the box is still editable); a PDF, a `.docx` and a `.pptx` upload; a Google Doc; editing a past submission; deleting one (check the file also leaves **Supabase → Storage → submission-files**).

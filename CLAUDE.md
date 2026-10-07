@@ -30,10 +30,10 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - `count` in `synthesis` is distinct participants; `submission_count` is contribution rows.
 - Auth email delivery uses `supabase/functions/send-email`: a signed Send Email Hook that sends the OTP through Resend. Its three values (`RESEND_API_KEY`, `SEND_EMAIL_HOOK_SECRET`, `AUTH_EMAIL_FROM`) belong in Supabase Edge Function secrets, never Vercel or git.
 
-## Submission wizard (built 2026-10-07, not yet deployed)
+## Submission wizard (deployed 2026-10-07, commit `a404dfa`)
 - The Submit tab (after email verification) is an 8-step wizard in `public/wizard.js` (state `W`, loaded **before** `app.js`; `render()` in `app.js` calls `wzSyncFields()` first and `wzAfterRender()` last). Server side: `api/map-pillars.js` (step 3) plus `noTag`/`contributionType` on `api/summarize.js`.
 - Reused existing columns instead of the brief's names: `pillars` = selected pillars, `content` = original text, `summary` = AI summary, `participant_id` = user id. New: `contribution_type`, `input_mode`, `pillar_choice`, `audio_url`, `file_url`, `file_name`, `discovery_input_id`, and the private table `pillar_discovery_inputs`. `audio_url`/`file_url` are storage **paths** (or a Google link) in the private bucket `submission-files`, owner-only.
-- **Deploy order:** owner runs the whole `supabase-setup.sql` first (it is backward-compatible with the old frontend), then push.
+- **Deploy status:** the owner had already run the new `supabase-setup.sql` (probed: new columns present, discovery table denies anon reads); `a404dfa` was pushed and every path still returned `401` without the crew cookie. Future SQL changes: owner runs them first, then push.
 - Typing does not redraw; gated fields call `wzLiveGate()` to enable/disable Next. Never paste a stored path/URL into an `onclick` string; look it up by submission id (`wzOpenStored`).
 - Voice transcription is the browser's `SpeechRecognition` (editable transcript); real transcription, real Storage and real model output for the new prompts are **unverified**: the tests use fakes.
 
@@ -43,7 +43,7 @@ The verified-participant cutover is complete. The owner ran the full `supabase-s
 The hosted Account A smoke test passed: six-digit OTP verification, an `is_test` submission, owner-only raw text and controls, and persistence after refresh. One test row containing `Production ownership test — account A` intentionally remains in production for the cross-account check. The owner stopped before Account B and wants to resume in a new session.
 
 **Next up, in order**
-0. Owner: run `supabase-setup.sql`, tell me to commit/push the wizard, then try it live (README → "Not yet verified").
+0. Live-test the wizard (README → "Not yet verified": text, voice on phone + laptop, PDF/docx/pptx upload, Google Doc, edit, delete + Storage cleanup, real mapping/summary quality) and fix whatever turns up.
 1. Complete Account B using a second real email and separate browser session. Confirm Account B can see Account A's public summary but not its raw text, `yours` badge, test toggle, or delete control. Create/delete B's own test, then return to A and delete A's test.
 2. Run synthesis on multiple contributions from one real participant plus another anonymous participant; inspect the real model output and stored JSON for attribution/privacy.
 3. Privacy defense in depth: public summaries/saved synthesis are still reachable with the public Supabase key outside the crew gate, although production inserts and private content are now Auth-protected. Consider gated read APIs.
