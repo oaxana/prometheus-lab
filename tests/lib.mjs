@@ -29,7 +29,7 @@ export const FAKE_SPEECH = () => {
 
 const NEXT = '.wz-nav .btn-amber';
 // Clicks through the submission wizard. Pass stopAt (1-8) to stop when that step is showing.
-// Needs a verified participant (or an unlocked test persona) already on the page.
+// Needs a verified participant already on the page.
 export async function runWizard(p, o = {}) {
   const { text = 'AI should always disclose itself.', discovery = 'Consent and disclosure matter most.', anonymous = true, name, test = false,
     pillars = null, choice = 'selected', mode = 'text', type = '', upload = null, stopAt = 8, resume = false } = o;
@@ -71,6 +71,12 @@ export async function runWizard(p, o = {}) {
   if (stopAt === 7) return;
   await p.click('.wz-nav .btn-amber:has-text("Submit")');
   await p.waitForSelector('.wz-confirm');
+}
+
+// Logs in through /api/admin (the harness's ADMIN_PASSWORD is 'letmein') and returns the session cookie, for direct API calls.
+export async function adminCookie(B, password = 'letmein') {
+  const r = await fetch(B + '/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'login', password }) });
+  return (r.headers.get('set-cookie') || '').split(';')[0];
 }
 
 // Voices starts with Submissions collapsed; this expands it (no-op if it is already open).

@@ -1,63 +1,26 @@
-import { launch, runWizard, openSubs } from './lib.mjs';
+import { launch, adminCookie } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch();
 const p = await (await b.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'dark' })).newPage();
 p.on('dialog', (d) => d.accept()); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
 const nav = (t) => p.click(`nav button:has-text("${t}")`);
-const submit = async (t) => { await runWizard(p, { text: t }); await nav('Voices'); await p.waitForSelector('h2:has-text("All Voices")'); await openSubs(p); };
 const postService = (path, body) => fetch(B + path, { method: 'POST', headers:{apikey:'service-test','content-type':'application/json'}, body: JSON.stringify(body) });
-const postApi = (body, key = 'letmein') => fetch(B + '/api/test-persona-submit', { method: 'POST', headers:{'x-admin-key':key,'content-type':'application/json'}, body: JSON.stringify(body) });
 
-await p.goto(B);
-await nav('Submit');
-check('locked: no persona switcher for normal visitors', (await p.locator('.persona-row').count()) === 0);
-await p.evaluate(() => sessionStorage.setItem('prometheus-lab-admin', 'letmein')); await p.reload(); await nav('Submit');
-check('unlocked: switcher shows Off / Me / Persona 2 / Persona 3', (await p.locator('.persona-row .pillar-chip').allInnerTexts()).join(',') === 'Off,Me,Persona 2,Persona 3');
-
-// Persona 2: fixed server-controlled name, test-only, no Auth participant link
-await p.click('.persona-row .pillar-chip:has-text("Persona 2")');
-check('Persona 2: fixed name shown', await p.locator('.test-status:has-text("Persona 2")').isVisible());
-check('Persona 2: permanently test-only', (await p.locator('.test-status').innerText()).includes('Always excluded'));
-await p.screenshot({ path: 'screens/shot-persona.png', fullPage: false });
-await submit('P2: signage and opt-out is the realistic default.');
-await p.click('.toggle-row:has-text("Show tests")');
-check('P2 card named + yours + test', (await p.locator('.submission-meta').first().innerText()).includes('Persona 2') && (await p.locator('.mine-badge').count()) === 1 && (await p.locator('.test-badge').count()) === 1);
-check('P2 raw text is not returned through the public listing RPC', (await p.locator('.raw-toggle:has-text("Show your full submission")').count()) === 0);
-check('"Viewing as Persona 2" note', await p.locator('text=Viewing as Persona 2').isVisible());
-
-// Test-persona deletion is server/admin protected, not a public uid-based RPC.
-await postApi({persona:2,pillars:[1],content:'temporary persona row',summary:'temp',autoTagged:false});
-let snapshot = (await (await fetch(B + '/__db')).json()).submissions;
-const temporary = snapshot.find((s) => s.content === 'temporary persona row');
-let response = await postApi({persona:2,deleteId:temporary.id},'wrong');
-check('persona delete rejects the wrong admin key', response.status === 401);
-snapshot = (await (await fetch(B + '/__db')).json()).submissions;
-check('wrong-key delete leaves persona row intact', snapshot.some((s) => s.id === temporary.id));
-response = await postApi({persona:2,deleteId:temporary.id});
-snapshot = (await (await fetch(B + '/__db')).json()).submissions;
-check('admin-key persona delete removes only the requested test row', response.status === 200 && !snapshot.some((s) => s.id === temporary.id));
-
-// Persona 3: P2's card is no longer "yours"
-await nav('Submit'); await p.click('.persona-row .pillar-chip:has-text("Persona 3")');
-await submit('P3: opt-in only for identifying people.');
-await p.click('.toggle-row:has-text("Show tests")'); await p.click('.toggle-row:has-text("Show tests")'); // ensure on
-if ((await p.locator('.submission-card').count()) < 2) await p.click('.toggle-row:has-text("Show tests")');
-check('two cards; only Persona 3 is "yours"', (await p.locator('.submission-card').count()) === 2 && (await p.locator('.mine-badge').count()) === 1);
-check('"yours" belongs to Persona 3', (await p.locator('.submission-card.mine .submission-meta').innerText()).includes('Persona 3'));
-check('test personas never receive raw text through the public listing RPC', (await p.locator('.raw-toggle:has-text("Show your full submission")').count()) === 0);
-
-// Me: also a detached, test-only persona (never the signed-in participant)
-await nav('Submit'); await p.click('.persona-row .pillar-chip:has-text("Me")');
-check('Me: fixed name and test-only notice', await p.locator('.test-status:has-text("Me")').isVisible());
-await submit('Me: strict opt-in, default off.');
-check('persona survives reload (session)', true);
-
-// one authenticated anonymous participant with two contributions + named test voices
+// Five contributions from four people, inserted server-side: three named test voices (no Auth participant)
+// and one authenticated anonymous participant with two contributions.
+for (const [name, uid, content] of [['Persona 2', 'test-voice-2', 'P2: signage and opt-out is the realistic default.'], ['Persona 3', 'test-voice-3', 'P3: opt-in only for identifying people.'], ['Me', 'test-voice-me', 'Me: strict opt-in, default off.']]) {
+  await postService('/supabase/rest/v1/submissions', { pillars: [1], content, summary: 's', auto_tagged: false, is_test: true, participant_id: null, uid, display_name: name });
+}
 const stranger='11111111-1111-4111-8111-111111111111';
 await postService('/supabase/rest/v1/submissions', { pillars: [2], content: 'anon thought one', summary: 's', auto_tagged: false, is_test: false, participant_id:stranger, uid: null, display_name: '' });
 await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'anon thought two', summary: 's', auto_tagged: false, is_test: false, participant_id:stranger, uid: null, display_name: '' });
-await p.reload(); await nav('Synthesis');
+
+// The project lead logs in on the Admin page and unlocks the tabs (no submission of their own)
+await p.goto(B); await p.waitForSelector('.hero-cta');
+await p.click('.admin-link'); await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button');
+await p.waitForSelector('.admin-switch'); await p.click('.admin-switch');
+await nav('Synthesis');
 await p.click('.toggle-row:has-text("Include test submissions")');
 await p.click('button:has-text("Run synthesis")'); await p.waitForSelector('.syn-sec');
 
@@ -131,7 +94,7 @@ check('four distinct people despite five contributions', prompt.includes('5 cont
 
 // sloppy model output is repaired, not trusted: numbers clamped, missing fields tolerated
 await fetch(B + '/__synth?m=sparse');
-const sparse = await (await fetch(B + '/api/synthesize', { method: 'POST', headers: { 'x-admin-key': 'letmein', 'content-type': 'application/json' }, body: JSON.stringify({ includeTests: true }) })).json();
+const sparse = await (await fetch(B + '/api/synthesize', { method: 'POST', headers: { cookie: await adminCookie(B), 'content-type': 'application/json' }, body: JSON.stringify({ includeTests: true }) })).json();
 await fetch(B + '/__synth?m=full');
 check('sparse output: consensus clamped to 0-100, or taken from the strength label when unusable', sparse.commons[0].consensus === 100 && sparse.commons[1].consensus === 0 && sparse.commons[1].strength === 'emerging');
 check('sparse output: themes/quotes/suggestions capped and trimmed', sparse.commons[1].themes[0].length === 60 && sparse.commons[1].quotes.length === 2 && sparse.gaps[0].suggestions.length === 4);
@@ -146,9 +109,7 @@ check('legacy commons: bar from the strength label, pill counts people from the 
 check('legacy gaps (no pillarId, no suggestions) show just the note', (await p.locator('#acc-syn-gaps-OldG .syn-arrows').count()) === 0 && (await p.locator('#acc-syn-gaps-OldG .syn-note').innerText()) === 'old note');
 check('legacy string positions render as Position N and there is no spectrum', (await p.locator('#acc-syn-contested-Old .syn-pts li .syn-by').first().innerText()) === '— Position 1' && (await p.locator('#acc-syn-contested-Old .syn-pts li').first().innerText()).includes('A view') && (await p.locator('#acc-syn-contested-Old .spec-track').count()) === 0);
 
-// locking resets personas
-check('lead mode has no in-page "lock" link (it could strand the lead outside a locked Synthesis tab)', (await p.locator('button:has-text("Lock project-lead controls")').count()) === 0);
-await p.evaluate(() => lockAdmin()); await nav('Submit');   // still how a rejected key re-locks
-check('lock: switcher gone, back to participant verification', (await p.locator('.persona-row').count()) === 0 && await p.locator('.verify-card').isVisible());
+// test personas are gone
+check('no "Testing as" persona switcher or persona code left', (await p.locator('.persona-row').count()) === 0 && (await p.evaluate(() => typeof setPersona === 'undefined' && typeof PERSONAS === 'undefined')));
 check('no page errors', errs.length === 0, errs.join('|'));
 console.log(`\n${pass}/${total} passed`); await b.close();

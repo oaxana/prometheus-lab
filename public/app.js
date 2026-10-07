@@ -4,22 +4,14 @@ const MAX_CONTENT_CHARS=100000;           // matches the CHECK constraint in sup
 const MAX_ATTACH_BYTES=3*1024*1024;       // matches api/summarize.js (Vercel request limit is 4.5 MB)
 const POLL_MS=20000;
 
-let S={view:'home',submissions:[],synthesis:null,isOwner:false,
+let S={view:'home',submissions:[],synthesis:null,isAdmin:false,adminChecked:false,adminBusy:false,adminError:'',unlockTabs:false,
   synthesizing:false,displayName:'',
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
-  loaded:false,persona:0,authReady:false,session:null,participantName:'',
+  loaded:false,authReady:false,session:null,participantName:'',
   authEmail:'',otpSent:false,authBusy:false,authError:'',
   metrics:null,metricsState:'',metricsKey:-1,
   acc:{submissions:false,suggested:false},suggested:null,suggestedState:'',suggestedKey:-1};   // Voices accordions (open/closed) + suggested-pillar cache   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
-let sb=null,adminKey='';
-
-// ---------- Supabase participant session + admin key ----------
-// Test personas are deliberately test-only identities and never use the signed-in participant id.
-const PERSONAS={1:{label:'Me',uid:'test-persona-me'},2:{label:'Persona 2',uid:'test-persona-2'},3:{label:'Persona 3',uid:'test-persona-3'}};
-function loadAdminKey(){try{return sessionStorage.getItem('prometheus-lab-admin')||'';}catch(e){return '';}}
-function loadPersona(){try{return Number(sessionStorage.getItem('prometheus-lab-persona'))||0;}catch(e){return 0;}}
-function savePersona(n){try{n?sessionStorage.setItem('prometheus-lab-persona',String(n)):sessionStorage.removeItem('prometheus-lab-persona');}catch(e){}}
-function saveAdminKey(k){try{k?sessionStorage.setItem('prometheus-lab-admin',k):sessionStorage.removeItem('prometheus-lab-admin');}catch(e){}}
+let sb=null;
 
 // ---------- data layer (Supabase) ----------
 async function api(path,body,headers){
@@ -41,7 +33,7 @@ async function refresh(){
   if(!sb)return;
   try{
     const [subs,syn]=await Promise.all([
-      sb.rpc('list_submissions',S.persona?{p_test_uid:PERSONAS[S.persona].uid}:{}),
+      sb.rpc('list_submissions',{}),
       sb.from('synthesis').select('*').eq('id',1).maybeSingle()]);
     if(subs.error)throw subs.error;if(syn.error)throw syn.error;
     const next=(subs.data||[]).map(mapSubmission),nextSyn=mapSynthesis(syn.data);
@@ -49,7 +41,7 @@ async function refresh(){
     S.submissions=next;S.synthesis=nextSyn;
     const first=!S.loaded;S.loaded=true;
     // Don't re-render the form while someone is typing in it.
-    if(changed&&(first||(S.view!=='submit'&&S.view!=='pillars')))render();
+    if(changed&&(first||(S.view!=='submit'&&S.view!=='pillars'&&S.view!=='admin')))render();
   }catch(e){console.error(e);if(!S.loaded){S.loaded=true;showToast('Could not load voices — check your Supabase setup');render();}}
 }
 
@@ -66,8 +58,10 @@ async function syncSession(session){
   await refresh();render();
 }
 async function init(){
-  adminKey=loadAdminKey();S.isOwner=!!adminKey;
-  S.persona=S.isOwner&&PERSONAS[loadPersona()]?loadPersona():0;
+  try{sessionStorage.removeItem('prometheus-lab-admin');sessionStorage.removeItem('prometheus-lab-persona');}catch(e){}   // keys from the old in-page unlock
+  S.unlockTabs=readUnlockTabs();
+  if(location.hash==='#admin')S.view='admin';
+  checkAdmin();
   const cfg=window.PROMETHEUS_LAB_CONFIG||{};
   if(cfg.SUPABASE_URL&&cfg.SUPABASE_ANON_KEY&&window.supabase){
     sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,
@@ -125,9 +119,9 @@ async function editDisplayName(){
 // ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
 const LOCKED_TABS={pillars:'Share your voice first, then explore the pillars',voices:'Share your voice first to see what others have shared',synthesis:'Share your voice first to unlock this'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
-// The project lead is never locked out (they run synthesis), and nothing is treated as unlocked until the list has loaded.
+// Only a logged-in admin who switched on "Unlock all tabs" (Admin page) skips this.
 function hasContributed(){return !!S.session&&S.submissions.some(s=>s.mine&&!s.isTest);}
-function isLocked(v){return !!LOCKED_TABS[v]&&!S.isOwner&&!hasContributed();}
+function isLocked(v){return !!LOCKED_TABS[v]&&!(S.isAdmin&&S.unlockTabs)&&!hasContributed();}
 function nav(v){
   if(isLocked(v)){document.querySelector('.toast')?.remove();showToast(LOCKED_TABS[v]);return;}
   if(v!=='submit')wzStopAllRec();                 // a recording never keeps running behind another tab
@@ -149,7 +143,7 @@ function render(){
   ].map(t=>{const lk=isLocked(t.id);
     return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-disabled="true" aria-label="${t.label} (locked: ${LOCKED_TABS[t.id]})"`:''} onclick="nav('${t.id}')">${t.icon} ${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</button>`;}).join('');
   const m=document.getElementById('main');
-  ({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis})[S.view]?.(m);
+  ({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis,admin:renderAdmin})[S.view]?.(m);
   if(S.view==='submit')wzAfterRender();
   if(fk)document.querySelector(`#main [data-fk="${fk}"]`)?.focus({preventScroll:true});
 }
@@ -186,7 +180,8 @@ function renderHome(m){
   <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe',true)}${step(2,'Map','AI connects your ideas to 12 constitutional pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps')}</div>
   <div class="card info-card"><h2 class="info-q">What's a constitution here?</h2><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
   <div class="card info-card trust-card"><i class="ti ti-shield-lock trust-icon" aria-hidden="true"></i><div><h2 class="info-q">Built on trust</h2><p>Your email is used only to make sure each voice counts once, and it is never shown to anyone or sent to the AI. Even anonymous submissions are tied to a real person, so every perspective carries equal weight. Your raw words stay private to you. Only AI-generated summaries are shared with the group.</p></div></div>
-  <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>`;
+  <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>
+  <p class="admin-link-row"><button class="admin-link" onclick="nav('admin')">Admin</button></p>`;
 }
 
 function renderPillars(m){
@@ -201,11 +196,9 @@ function renderPillars(m){
 
 function renderSubmit(m){
   if(!sb){setupNeeded(m);return;}
-  if(!S.authReady&&!S.persona){m.innerHTML='<div class="loading"><div class="spinner"></div>Checking participant verification…</div>';return;}
-  if(!S.session&&!S.persona){
-    const testSwitcher=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
+  if(!S.authReady){m.innerHTML='<div class="loading"><div class="spinner"></div>Checking participant verification…</div>';return;}
+  if(!S.session){
     m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Verify once, then contribute anonymously or with your chosen display name.</p>
-    ${testSwitcher}
     <div class="card verify-card"><h3>Verify you’re one participant</h3>
       <p>Your email is used only by Supabase to make sure every person gets one voice. It is never included in synthesis or shown to other participants.</p>
       ${S.authError?`<p class="auth-error">${esc(S.authError)}</p>`:''}
@@ -213,11 +206,8 @@ function renderSubmit(m){
       :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
     </div>`;return;
   }
-  const personaRow=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
-  const identity=S.persona
-    ?`<div class="auth-status test-status"><span>🧪 Test persona: <strong>${esc(PERSONAS[S.persona].label)}</strong></span><span>Always excluded unless tests are included</span></div>`
-    :`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;
-  m.innerHTML=`${personaRow}${identity}<div id="wz-root"></div>`;
+  const identity=`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;
+  m.innerHTML=`${identity}<div id="wz-root"></div>`;
   renderWizard(document.getElementById('wz-root'));
 }
 
@@ -307,7 +297,7 @@ function renderVoices(m){
       const c=s.content||'';
       const rawPreview=c.length>800?(c.slice(0,800)+'…'):c;
       const rawButton=c?`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button>`:'';
-      const testButton=S.persona?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
+      const testButton=`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
       const rawContent=c?`<div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`:'';
       rawBlock=`${rawButton}${testButton}<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button>${rawContent}`;
     }
@@ -320,7 +310,7 @@ function renderVoices(m){
   <div class="filter-bar">
     <div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}"></div><span>Show tests</span></div>
     <div class="toggle-row" onclick="S.showMine=!S.showMine;render()"><div class="toggle toggle-sm ${S.showMine?'on':''}"></div><span>Mine only (${myCount})</span></div>
-  </div>${S.persona?`<p style="font-size:12px;color:var(--muted);margin:-8px 0 16px">Viewing as <strong>${esc(PERSONAS[S.persona].label)}</strong> — change on the Submit tab.</p>`:''}<div class="card">${bars}</div>
+  </div><div class="card">${bars}</div>
   ${accordion('submissions','Submissions',subs.length,cards||'<p class="acc-empty">No submissions match these filters.</p>')}
   ${accordion('suggested','Suggested Pillars',groups.length,renderSuggested(groups))}`;
 }
@@ -443,7 +433,7 @@ function renderSynthesis(m){
     <div class="preview-block"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span><p style="margin-top:8px">Uncovered pillars appear here.</p></div>`;}
   const hasAny=S.submissions.length>0;
   const testCount=S.submissions.filter(s=>s.isTest).length;
-  const showControls=S.isOwner&&!S.synthesizing&&hasAny;
+  const showControls=S.isAdmin&&!S.synthesizing&&hasAny;
   m.innerHTML=`<h2>Synthesis</h2><p class="subtitle">AI analysis of all voices.</p>${sb_}
   ${showControls?`<div style="margin-top:20px;text-align:center">
     ${testCount?`<div class="form-row" style="justify-content:center;margin-bottom:12px">
@@ -454,20 +444,55 @@ function renderSynthesis(m){
          <p style="font-size:12px;color:var(--muted);margin-top:6px">${S.synthIncludeTests?'Including test submissions':'Test submissions excluded'}</p>`
       :`<p style="font-size:13px;color:var(--muted)">All ${testCount} submissions are tests. Toggle "Include test submissions" above to analyze them.</p>`}
   </div>`:''}
-  ${!S.isOwner&&!S.synthesis?'<p style="font-size:13px;color:var(--muted);text-align:center;margin-top:16px">Only the project lead can trigger synthesis.</p>':''}
-  ${S.synthesizing||S.isOwner?'':`<div style="text-align:center;margin-top:16px"><button class="raw-toggle" onclick="unlockAdmin()">Project lead? Unlock</button></div>`}`;   // no in-page "lock" link: it could strand the lead outside a locked Synthesis tab
+  ${!S.isAdmin&&!S.synthesis?'<p style="font-size:13px;color:var(--muted);text-align:center;margin-top:16px">Only the project lead can trigger synthesis.</p>':''}`;
 }
 
-// ---------- project-lead unlock (the key is checked by the server on every synthesis run) ----------
-function unlockAdmin(){const k=prompt('Project-lead key:');if(!k)return;adminKey=k.trim();saveAdminKey(adminKey);S.isOwner=true;render();}
-function lockAdmin(){adminKey='';saveAdminKey('');S.isOwner=false;setPersona(0);}
-function setPersona(n){
-  // Keep what was typed, but drop the on-screen name box so render() can't copy a stale name back over the new state.
-  wzSyncFields();
-  document.getElementById('display-name')?.remove();
-  S.persona=n;savePersona(n);
-  if(!n)S.displayName=S.participantName;
-  render();refresh();}
+// ---------- Admin page (project lead) ----------
+// The password is checked by /api/admin, which sets an HttpOnly session cookie; synthesis checks that cookie again.
+// "Unlock all tabs" is a plain session cookie (no expiry), so it lasts for this browser session across tabs and only
+// counts while the admin cookie is valid. Add new controls to ADMIN_CONTROLS.
+const UNLOCK_COOKIE='pl_unlock_tabs';
+function readUnlockTabs(){return document.cookie.split(/;\s*/).includes(UNLOCK_COOKIE+'=1');}
+function setUnlockTabs(on){
+  document.cookie=`${UNLOCK_COOKIE}=${on?'1':''}; Path=/; SameSite=Strict${on?'':'; Max-Age=0'}${location.protocol==='https:'?'; Secure':''}`;
+  S.unlockTabs=on;render();showToast(on?'Tabs unlocked for you':'Tabs locked again');}
+const ADMIN_CONTROLS=[
+  {title:'Unlock all tabs',
+   text:'Open Pillars, Voices and Synthesis without submitting first. Only affects you, in this browser, until you log out of admin or close the browser. Everyone else still unlocks them by submitting.',
+   control:()=>`<button class="admin-switch" role="switch" aria-checked="${S.unlockTabs}" aria-label="Unlock all tabs" onclick="setUnlockTabs(${!S.unlockTabs})"><span class="toggle ${S.unlockTabs?'on':''}" aria-hidden="true"></span><span>${S.unlockTabs?'On':'Off'}</span></button>`},
+];
+async function checkAdmin(){
+  try{const r=await fetch('/api/admin');const d=await r.json();S.isAdmin=r.ok&&d.admin===true;}catch(e){S.isAdmin=false;}
+  S.adminChecked=true;render();}
+async function adminLogin(e){
+  e.preventDefault();
+  const password=document.getElementById('admin-password')?.value||'';
+  if(!password||S.adminBusy)return;
+  S.adminBusy=true;S.adminError='';render();
+  try{await api('/api/admin',{action:'login',password});S.isAdmin=true;showToast('Logged in as admin');}
+  catch(err){S.adminError=err.status===401?'That password isn’t right.':(err.message||'Could not log in.');}
+  S.adminBusy=false;render();
+  if(!S.isAdmin)document.getElementById('admin-password')?.focus();}
+async function adminLogout(){
+  try{await api('/api/admin',{action:'logout'});}catch(e){console.error(e);}
+  adminEnded();showToast('Logged out of admin');}
+function adminEnded(){if(S.unlockTabs)document.cookie=`${UNLOCK_COOKIE}=; Path=/; Max-Age=0`;S.unlockTabs=false;S.isAdmin=false;render();}
+function renderAdmin(m){
+  if(!S.adminChecked){m.innerHTML='<div class="loading"><div class="spinner"></div>Checking…</div>';return;}
+  if(!S.isAdmin){
+    m.innerHTML=`<h2>Admin</h2><p class="subtitle">For the project lead.</p>
+    <form class="card admin-login" onsubmit="adminLogin(event)">
+      <label for="admin-password">Admin password</label>
+      <div class="auth-form"><input type="password" id="admin-password" autocomplete="current-password" required><button class="btn btn-primary" ${S.adminBusy?'disabled':''}>${S.adminBusy?'Checking…':'Log in'}</button></div>
+      ${S.adminError?`<p class="auth-error" role="alert">${esc(S.adminError)}</p>`:''}
+    </form>`;
+    if(!S.adminBusy)document.getElementById('admin-password')?.focus();
+    return;}
+  m.innerHTML=`<h2>Admin</h2><p class="subtitle">You’re logged in as admin in this browser until you close it.</p>
+  ${ADMIN_CONTROLS.map(c=>`<div class="card admin-control"><div><h3>${c.title}</h3><p>${c.text}</p></div>${c.control()}</div>`).join('')}
+  <p class="admin-note">Run synthesis from the Synthesis tab.</p>
+  <button class="raw-toggle" onclick="adminLogout()">Log out of admin</button>`;
+}
 
 // ---------- files ----------
 function blobToBase64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});}
@@ -542,16 +567,9 @@ async function deleteMine(id){
   const mineRow=S.submissions.find(x=>x.id===id);
   const stored=[mineRow?.audioUrl,mineRow?.fileUrl,mineRow?.discoveryAudioUrl].filter(p=>p&&!/^https:/.test(p));
   try{
-    let deleted=false;
-    if(S.persona){
-      const result=await api('/api/test-persona-submit',{persona:S.persona,deleteId:id},{'x-admin-key':adminKey});
-      deleted=result.deleted===true;
-    }else{
-      const {data,error}=await sb.rpc('delete_my_submission',{p_id:id});
-      if(error)throw error;
-      deleted=data===true;
-    }
-    if(!deleted){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
+    const {data,error}=await sb.rpc('delete_my_submission',{p_id:id});
+    if(error)throw error;
+    if(data!==true){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
     if(stored.length)sb.storage.from(WZ_BUCKET).remove(stored).then(({error})=>{if(error)console.error('Could not remove stored files:',error);});
     S.openRaw.delete('raw-'+id);
     await refresh();render();showToast('Your submission was deleted');
@@ -560,16 +578,16 @@ function toggleRaw(id){S.openRaw.has(id)?S.openRaw.delete(id):S.openRaw.add(id);
 
 // ---------- synthesis (project lead) ----------
 async function runSynthesis(){
-  if(S.synthesizing||!S.isOwner)return;
+  if(S.synthesizing||!S.isAdmin)return;
   const real=S.synthIncludeTests?S.submissions:S.submissions.filter(s=>!s.isTest);
   if(!real.length)return alert('No submissions to analyze.');
   S.synthesizing=true;render();
   try{
-    await api('/api/synthesize',{includeTests:S.synthIncludeTests},{'x-admin-key':adminKey});
+    await api('/api/synthesize',{includeTests:S.synthIncludeTests});
     S.synthesizing=false;await refresh();render();
   }catch(e){
     S.synthesizing=false;
-    if(e.status===401){lockAdmin();alert('That key was not accepted.');}
+    if(e.status===401){adminEnded();alert('Your admin session has ended. Log in again from the Admin link at the bottom of Home.');}
     else{render();alert('Error: '+(e.message||'synthesis failed'));}
   }}
 

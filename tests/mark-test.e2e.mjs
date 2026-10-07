@@ -20,16 +20,15 @@ check('heading shows 1 real + 1 test once tests are shown', (await heading()).in
 check('card visible again with test badge + "Unmark test"', (await p.locator('.test-card .test-badge').count()) === 1 && (await p.locator('button:has-text("Unmark test")').count()) === 1);
 await p.screenshot({ path: 'screens/shot-testflag.png', fullPage: true });
 // synthesis tab: real count excludes it, include-tests toggle brings it back
-await p.click('nav button:has-text("Synthesis")'); await p.click('button:has-text("Project lead? Unlock")'); // dialog auto-accepts with empty value
-p.removeAllListeners('dialog'); 
-const sess = await p.evaluate(() => { sessionStorage.setItem('prometheus-lab-admin', 'x'); });
-await p.reload(); await p.click('nav button:has-text("Synthesis")');
+await p.click('nav button:has-text("Home")'); await p.click('.admin-link');
+await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button'); await p.waitForSelector('.admin-control');
+await p.click('nav button:has-text("Synthesis")');
 check('synthesis counts 1 contribution (test excluded)', (await p.locator('button:has-text("Run synthesis")').innerText()).includes('1 contributions'));
 await p.click('.toggle-row:has-text("Include test submissions")');
 check('include-tests brings it back (2)', (await p.locator('button:has-text("Run synthesis")').innerText()).includes('2 contributions'));
 // unmark it again
-p.on('dialog', (d) => d.accept());
-await p.click('nav button:has-text("Voices")'); await openSubs(p); await p.click('.toggle-row:has-text("Show tests")');
+await p.click('nav button:has-text("Voices")'); await openSubs(p);
+if (!(await p.locator('.toggle-row:has-text("Show tests") .toggle.on').count())) await p.click('.toggle-row:has-text("Show tests")');
 await p.locator('button:has-text("Unmark test")').click();
 await p.waitForFunction(() => !document.querySelector('.test-card'));
 check('unmarked: back to 2 real voices', (await heading()).includes('(2)'));

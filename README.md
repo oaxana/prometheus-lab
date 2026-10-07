@@ -41,9 +41,9 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 - **Voices:** a per-pillar coverage chart plus a card per submission showing the AI *summary*, tags and date. Auth ownership makes "yours", raw-text access, **mark/unmark as test**, and **delete** work after reload and on another device signed into the same email. Filters: "Show tests", "Mine only".
 - **Synthesis:** the latest saved result is visible to everyone.
 
-**For the project lead** (after unlocking with `ADMIN_KEY` on the Synthesis tab)
-- **Run synthesis**, optionally including test submissions.
-- **Testing personas** on the Submit tab ("Testing as: Off / Me / Persona 2 / Persona 3"). These are admin-key-protected, test-only identities and are never attached to the signed-in participant.
+**For the project lead** (after logging in on the **Admin** page: muted link at the bottom of Home, or `/#admin`)
+- **Unlock all tabs** (Admin page): opens Pillars, Voices and Synthesis without submitting first, for that admin's browser session only. Everyone else still unlocks them by submitting.
+- **Run synthesis** on the Synthesis tab, optionally including test submissions.
 - Results attribute each view to named participants; anonymous submitters are counted as distinct participants ("3 anonymous"), not submission rows.
 
 ## How it works
@@ -62,7 +62,7 @@ A private web app where a crew can contribute anonymous (or named) positions on 
           ├─ map-pillars.js → Claude (wizard step 3: maps a free-form answer onto the draft pillars)
           ├─ summarize.js   → Claude (summary + pillar tags, one call per submission or edit)
           ├─ synthesize.js  → reads ALL submissions (service role) → replaces ids with per-run labels → Claude → stores result
-          ├─ test-persona-submit.js → admin-key-checked, test-only persona create/delete
+          ├─ admin.js       → checks ADMIN_PASSWORD, sets/clears the HttpOnly admin session cookie
           └─ google-doc.js  → fetches Google's plain-text export of a shared Doc/Slides link
 ```
 
@@ -85,14 +85,17 @@ api/                     Vercel serverless functions
   _shared.js             model name, pillar names, Claude client, error handling ("_" = not a route)
   summarize.js           POST: text/images/PDFs → { pillars, summary, autoTagged }
   map-pillars.js         POST: free-form text → { matched, newIdeas, reasoning } (wizard step 3)
-  synthesize.js          POST (admin key): builds + stores the commons/contested/gaps synthesis
-  test-persona-submit.js POST (admin key): creates/deletes detached, test-only persona contributions
+  synthesize.js          POST (admin cookie): builds + stores the commons/contested/gaps synthesis
+  admin.js               GET: am I admin? POST: log in (checks ADMIN_PASSWORD) / log out
   google-doc.js          POST: Google Docs/Slides link → { name, kind, text }
 middleware.js            crew password gate in front of everything (pages, config.js, /api/*)
 supabase-setup.sql       tables, security policies, RPC functions. Idempotent: safe to re-run
 supabase/functions/
   send-email/            signed Supabase Auth hook → Resend OTP email
 seed-test-voices.sql     12 fake voices from "Me / Persona 2 / Persona 3" for testing synthesis
+scripts/backup-and-wipe.mjs  one-off: back up all data to backups/ (git-ignored); with --wipe, delete it all
+scripts/seed-transcript.mjs  seeds seed/workshop-2026-10-01.json: one anonymized submission per workshop speaker
+seed/workshop-2026-10-01.json  14 anonymized voices (Participant A–N) from the Oct 1 workshop; no name mapping exists anywhere
 vercel.json              static output dir, function timeouts, security headers
 package.json             runtime deps: @anthropic-ai/sdk, @supabase/supabase-js, @vercel/functions
 .env.example             every environment variable, documented
@@ -140,8 +143,8 @@ Create an API key at console.anthropic.com. **Set a monthly spend limit** there.
    | `ANTHROPIC_API_KEY` | Anthropic key (server-only) |
    | `SUPABASE_URL` | Supabase Project URL, same as in `config.js` |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase **service_role** key. Server-only; bypasses row-level security |
-   | `ADMIN_KEY` | Passphrase you invent; unlocks "Run synthesis" and the testing personas |
-   | `SITE_PASSWORD` | The crew password shown on the landing page (use a different value from `ADMIN_KEY`) |
+   | `ADMIN_PASSWORD` | Password you invent for the Admin page; unlocks "Run synthesis" and "Unlock all tabs". If missing, admin features are off |
+   | `SITE_PASSWORD` | The crew password shown on the landing page (use a different value from `ADMIN_PASSWORD`) |
 
    Changing a variable later requires a **Redeploy** (Deployments → ⋯ → Redeploy). If `SITE_PASSWORD` is missing, the whole site shows "This site isn't set up yet" (it fails closed).
 3. Deploy. Every push to `main` redeploys automatically.
@@ -158,15 +161,14 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 
 **Crew:** open the site → enter the crew password → browse freely. The first time you contribute, Submit asks for an email and one-time code. After verification choose **Anonymous** or, after saving one display name, **Submit as _name_**. Supabase keeps the session usable on that browser until sign-out, invalidation, or cleared site data.
 
-**Project lead, running a synthesis:**
-1. Synthesis tab → **Project lead? Unlock** → enter `ADMIN_KEY` (kept for that browser tab only).
-2. Optionally switch on **Include test submissions**.
-3. **Run synthesis** (about 20–60 s; costs a few cents).
+**Project lead (admin):**
+1. Home → scroll to the bottom → **Admin** (or open `/#admin`) → enter `ADMIN_PASSWORD` → **Log in**. The server checks it and sets an HttpOnly session cookie; you stay logged in until you close the browser or click **Log out of admin**.
+2. To browse without submitting, switch on **Unlock all tabs** (only affects you, for this browser session).
+3. Synthesis tab → optionally **Include test submissions** → **Run synthesis** (about 20–60 s; costs a few cents).
 
-**Testing without real people** (three ways):
+**Testing without real people** (two ways):
 1. **Your verified participant:** submit real or test contributions as yourself. Named submissions always use your one saved display name; you cannot type a different identity per row.
-2. **Personas:** after unlocking, Submit shows **Testing as: Off · Me · Persona 2 · Persona 3**. Every persona is forced to `is_test = true`, has no Auth participant id, and is inserted only after the server validates `ADMIN_KEY`.
-3. **Seed data:** paste `seed-test-voices.sql` into the Supabase SQL Editor for 12 ready-made voices designed to produce contested ground on pillars 1, 4 and 7, commons on 5/10/12, and gaps on 2/3/6/8/9/11. Remove them with:
+2. **Seed data:** paste `seed-test-voices.sql` into the Supabase SQL Editor for 12 ready-made voices designed to produce contested ground on pillars 1, 4 and 7, commons on 5/10/12, and gaps on 2/3/6/8/9/11. Remove them with:
    ```sql
    delete from public.submissions where uid like 'demo-voter-%';
    ```
@@ -181,11 +183,11 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 | Private authentication identity | Supabase Auth stores the email and session. `participants` contains only the Auth UUID and saved display name—no email. The Supabase client persists/refreshes its session; app code never manually stores tokens. |
 | Creating a real submission | Direct table inserts are revoked. `submit_submission()` requires the `authenticated` role and always writes `participant_id = auth.uid()`. The browser supplies neither owner id nor per-row display name. |
 | Raw submission text and owner IDs | `submissions` has RLS and no direct browser table access. `list_submissions()` returns everyone's public fields but raw text only when `participant_id = auth.uid()`. It never returns participant ids. |
-| Deleting / re-flagging submissions | `delete_my_submission()` and `set_my_submission_test()` compare real rows to `auth.uid()` server-side. Test-persona deletion goes through the crew-gated, admin-key-checked Vercel endpoint; predictable test UIDs cannot mutate rows through public RPCs. |
+| Deleting / re-flagging submissions | `delete_my_submission()` and `set_my_submission_test()` compare real rows to `auth.uid()` server-side. Predictable test/legacy UIDs cannot mutate rows through public RPCs. |
 | Named submissions | `set_my_display_name()` saves one non-unique name/handle. Named rows use that saved value; edits update that participant's existing named rows while anonymous rows stay anonymous. |
 | Claude synthesis input | The server groups rows by stable owner, then replaces all UUIDs/legacy UIDs with run-local labels (`Participant A…`). Claude receives no email, UUID, session data, or public display name. Afterward, the server maps source labels to public names or distinct anonymous counts and scrubs run-local labels from prose. |
 | Synthesis table | Readable by anyone with the anon key, writable only by the service-role key (server). |
-| Running synthesis | `x-admin-key` header checked server-side with a constant-time comparison. |
+| Admin login and running synthesis | `/api/admin` compares the password to `ADMIN_PASSWORD` server-side (constant time, 1 s delay on a miss) and sets an HttpOnly, SameSite=Strict, session-only cookie holding a keyed hash, never the password. `/api/synthesize` re-checks that cookie on every run. Changing `ADMIN_PASSWORD` logs every admin out. "Unlock all tabs" is a plain session cookie that only counts while the admin cookie is valid; tab locks are a courtesy, not a privacy boundary. |
 | Claude API key, service-role key | Server environment variables only; never in the browser or repo. |
 | Google link fetching | Strict URL pattern; only `docs.google.com` and `*.googleusercontent.com` are ever contacted; redirects re-checked on every hop; 1 MB cap. |
 | Prompt injection | User text is wrapped in tags and the model is told to treat it as data; AI output is validated (pillar ids, author names) and HTML-escaped before display. |
@@ -243,9 +245,10 @@ All of them require the crew cookie (otherwise `401 {code:"crew_login"}`).
 | `GET /api/metrics` | none | `{ voices, pillarsCovered, contributions }`: real (non-test) rows only; voices counted by participant id (old rows by browser uid). Uses the server-side key; behind the crew gate like every `/api/*`. Reads up to 1,000 rows |
 | `POST /api/map-pillars` | `{ text }` | `{ matched: number[], newIdeas: string[], reasoning }`. Ids are validated against the pillar list; text capped at 8,000 chars. The browser falls back to the plain pillar grid if this fails |
 | `POST /api/summarize` | `{ text, selectedPillars?, noTag?, contributionType?, attachments?: [{name, mediaType, data(base64)}] }` | `{ pillars, summary, autoTagged, attachmentsSkipped? }`. Text capped at 8,000 chars; ≤4 attachments, 3 MB total; images/PDFs only |
-| `POST /api/synthesize` | `{ includeTests? }` + header `x-admin-key` | The synthesis (also stored). Reads up to 1,000 submissions, 6,000 chars each |
+| `POST /api/synthesize` | `{ includeTests? }` + the admin session cookie | The synthesis (also stored). Reads up to 1,000 submissions, 6,000 chars each |
 | `POST /api/google-doc` | `{ url }` | `{ name, kind, text }`. Public Docs/Slides only |
-| `POST /api/test-persona-submit` | test contribution, or `{ persona, deleteId }`, plus header `x-admin-key` | Creates/deletes only forced-test, participant-less `Me` / `Persona 2` / `Persona 3` rows |
+| `GET /api/admin` | none | `{ admin }`: is this browser logged in as admin |
+| `POST /api/admin` | `{ action: 'login', password }` or `{ action: 'logout' }` | `{ admin }` and sets/clears the `pl_admin` cookie. Wrong password → 401 after 1 s; no `ADMIN_PASSWORD` → 503 |
 
 ## Testing
 
@@ -254,7 +257,7 @@ All suites live in `tests/` and need **no real Anthropic, Supabase or Google acc
 ```bash
 npm install                 # once, in the repo root (the tests import the API code)
 cd tests && npm install     # once; uses your installed Google Chrome (or: npx playwright install chromium, PW_CHANNEL=chromium)
-npm test                    # all 14 suites, ~3 min   (npm test -- persona  runs one)
+npm test                    # all 16 suites, ~3 min   (npm test -- synthesis  runs one)
 ```
 
 | Suite | Covers |
@@ -263,9 +266,10 @@ npm test                    # all 14 suites, ~3 min   (npm test -- persona  runs
 | `google-doc.test.mjs` | Google link endpoint: redirects, private docs, hostile URLs, size limits |
 | `sql-delete` / `sql-mark-test` / `sql-seed` | the real SQL: authenticated ownership rules, RLS, legacy/test isolation, seed data |
 | `sql-auth.test.mjs` | Auth-required creation, `auth.uid()` ownership, saved/duplicate names, anonymity, cross-participant isolation |
-| `app.e2e.mjs` | OTP verification, persisted session, submit, privacy between users, filters, synthesis, light/dark |
+| `app.e2e.mjs` | OTP verification, persisted session, submit, privacy between users, filters, Admin page (login, unlock tabs, logout), synthesis, light/dark |
 | `delete.e2e` / `mark-test.e2e` | delete and mark-as-test buttons |
-| `persona.e2e.mjs` | detached test personas, per-participant attribution, anonymous counts, legacy output |
+| `admin.test.mjs` | admin login API: fail-closed without `ADMIN_PASSWORD`, wrong/near-miss passwords, cookie flags, forged cookies, synthesis guard, password rotation, logout |
+| `synthesis.e2e.mjs` | synthesis rendering, per-participant attribution, anonymous counts, what the model receives, sloppy model output, legacy saved shapes |
 | `files.e2e.mjs` | upload step: .pptx (order, notes), unreadable .ppt needing a note, Google links, images, what the AI actually receives, what gets stored |
 | `wizard.e2e.mjs` | all eight steps: gating, amber toggles, AI mapping + failure fallback, voice recording (Chrome's fake microphone + a fake speech service), review/edit jumps, history edit, storage privacy, delete cleanup, mobile/desktop layout |
 | `sql-wizard.test.mjs` | discovery-input privacy, file-path ownership rules, owner-only fields, edit/delete/test-flag cascades, private storage bucket + policies |
@@ -314,7 +318,7 @@ Why things are the way they are (including where we departed from the original s
 - **Lightweight verification, not an account product.** Supabase email OTP supplies one stable participant id and a long-lived normal Auth session; there are no passwords, profiles, avatars, social login, or onboarding.
 - **A real server-side password gate**, not a script in the page. A client-side check would be cosmetic: anyone could read `config.js` or call `/api/*` directly. Middleware runs in front of everything, so it also protects the AI credits.
 - **Raw text is private via database functions, not just UI hiding.** With the public key, a readable table would expose everyone's raw text. So there is no read policy; browsers go through functions.
-- **Extra env vars beyond the original "three":** `ADMIN_KEY` (stops strangers spending Anthropic credits via `/api/synthesize`) and `SITE_PASSWORD` (the landing-page gate). Five total.
+- **Extra env vars beyond the original "three":** `ADMIN_PASSWORD` (the Admin page; stops strangers spending Anthropic credits via `/api/synthesize`; replaced the older `ADMIN_KEY`) and `SITE_PASSWORD` (the landing-page gate). Five total.
 - **Model:** `claude-sonnet-5-5` for both calls (the spec said Sonnet 4.6/Haiku; the owner asked for Sonnet 5.5). Structured JSON output instead of parsing free text. `effort` low for summaries, medium for synthesis. **Server-side refusal fallbacks were deliberately not enabled**: they only cover cyber/competing-AI refusals, which are unlikely for this content, and rely on a beta we couldn't test. A refusal returns a clear error and the submission still saves with a plain summary.
 - **Polling every 20 s instead of realtime**, because browsers can't subscribe to a table they're not allowed to read.
 - **Bugs in the original prototype that were fixed:** the AI step never ran (`imgBlobs` used before definition); typed text vanished on re-render; synthesis output was injected as raw HTML (now escaped).
@@ -355,7 +359,8 @@ Why things are the way they are (including where we departed from the original s
 | Verification email does not arrive / 429 | Wait at least 60 seconds before retrying; check **Authentication → Logs**, **Rate Limits**, the `send-email` Edge Function logs, and Resend logs/capacity |
 | "Authentication required" or submission RPC missing | Run the complete current `supabase-setup.sql` before deploying the frontend, then reload |
 | Summary is just the first 200 characters | The AI step failed: check `ANTHROPIC_API_KEY`, Anthropic billing, Vercel function logs |
-| "Wrong admin key" | `ADMIN_KEY` mismatch (the unlock is per tab; reopening needs re-entry) |
+| Admin page says the password isn't right | `ADMIN_PASSWORD` mismatch, or it was changed in Vercel without a **Redeploy** |
+| "Your admin session has ended" | The browser was closed, you logged out, or `ADMIN_PASSWORD` changed: log in again on the Admin page |
 | Delete / Mark-as-test shows an error | The newest SQL wasn't run: re-run `supabase-setup.sql` (safe) |
 | "Google would not let us read that file" | Share the file as "Anyone with the link can view" |
 | Synthesis result looks old | Re-run it; saved results keep their original shape and content |

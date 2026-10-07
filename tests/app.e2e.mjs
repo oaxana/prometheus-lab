@@ -11,9 +11,9 @@ const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, co
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('status of 401')) errors.push(m.text()); });  // the wrong-key test causes one expected 401
+page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('status of 401')) errors.push(m.text()); });  // the expired-admin-session test causes one expected 401
 const dialogs = [];
-page.on('dialog', async (d) => { dialogs.push(d.message()); if (d.type() === 'prompt') await d.accept('letmein'); else await d.accept(); });
+page.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
 
 await page.goto(B);
 await page.waitForSelector('.stat-num');
@@ -114,6 +114,48 @@ check('other user (server level): sees the summary but never raw text, "yours" o
 check('other user: raw text not anywhere in DOM', !(await p2.content()).includes('disclose itself on playa'));
 await p2.close(); await ctx2.close();
 
+// Admin page: a muted footer link, password checked by the server, "Unlock all tabs" just for this browser session
+const actx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const ap = await actx.newPage(); const aerr = []; ap.on('pageerror', (e) => aerr.push(String(e)));
+await ap.goto(B); await ap.waitForSelector('.hero-cta');
+check('admin link sits in the home footer, small and muted', await ap.locator('.admin-link-row .admin-link:has-text("Admin")').isVisible() && parseFloat(await ap.locator('.admin-link').evaluate((e) => getComputedStyle(e).fontSize)) <= 12 && parseFloat(await ap.locator('.admin-link').evaluate((e) => getComputedStyle(e).opacity)) < 1);
+await ap.click('.admin-link'); await ap.waitForSelector('#admin-password');
+check('admin page asks for a password (masked); no controls before login', (await ap.locator('#admin-password').getAttribute('type')) === 'password' && (await ap.locator('.admin-control').count()) === 0);
+await ap.fill('#admin-password', 'wrong'); await ap.click('.admin-login button');
+await ap.waitForSelector('.admin-login .auth-error');
+check('wrong admin password rejected by the server', (await ap.locator('.admin-login .auth-error').innerText()).includes('isn’t right') && (await ap.locator('.admin-control').count()) === 0 && (await ap.evaluate(() => S.isAdmin)) === false);
+check('no admin cookie after a wrong password', !(await actx.cookies()).some((c) => c.name === 'pl_admin'));
+await ap.fill('#admin-password', 'letmein'); await ap.click('.admin-login button');
+await ap.waitForSelector('.admin-control');
+const ac = (await actx.cookies()).find((c) => c.name === 'pl_admin');
+check('right password: admin cookie is HttpOnly, SameSite=Strict, session-only, never the password', !!ac && ac.httpOnly && ac.sameSite === 'Strict' && ac.expires === -1 && !ac.value.includes('letmein'));
+check('password is not kept in browser storage', !(await ap.evaluate(() => JSON.stringify({ ...sessionStorage }) + JSON.stringify({ ...localStorage }))).includes('letmein'));
+check('admin v1 has exactly one control: Unlock all tabs (off)', (await ap.locator('.admin-control').count()) === 1 && (await ap.locator('.admin-control h3').innerText()) === 'Unlock all tabs' && (await ap.locator('.admin-switch').getAttribute('aria-checked')) === 'false');
+check('logging in alone does not unlock the tabs', (await ap.locator('nav button.locked').count()) === 3);
+await ap.screenshot({ path: SHOTS + 'screens/shot-admin.png', fullPage: true });
+await ap.click('.admin-switch');
+check('switch on: Pillars, Voices and Synthesis unlock without a submission', (await ap.locator('.admin-switch').getAttribute('aria-checked')) === 'true' && (await ap.locator('nav button.locked').count()) === 0);
+await ap.click('nav button:has-text("Voices")');
+check('unlocked Voices opens', await ap.locator('h2:has-text("All Voices")').isVisible());
+await ap.reload(); await ap.waitForSelector('.hero-cta'); await ap.waitForFunction(() => S.adminChecked);
+check('unlock survives a reload (same browser session)', (await ap.locator('nav button.locked').count()) === 0);
+const ap2 = await actx.newPage(); await ap2.goto(B); await ap2.waitForFunction(() => S.adminChecked);
+check('unlock applies to a second tab of the same browser', (await ap2.locator('nav button.locked').count()) === 0);
+await ap2.close();
+const octx = await browser.newContext(); const op = await octx.newPage(); await op.goto(B); await op.waitForSelector('.hero-cta');
+check('another visitor is still locked (unlock is per admin browser)', (await op.locator('nav button.locked').count()) === 3);
+await octx.close();
+await actx.addCookies([{ name: 'pl_admin', value: 'forged', url: B }]);   // replaces the real (HttpOnly) cookie
+await ap.reload(); await ap.waitForFunction(() => S.adminChecked);
+check('a forged admin cookie is not accepted, so the unlock no longer counts', (await ap.evaluate(() => S.isAdmin)) === false && (await ap.locator('nav button.locked').count()) === 3);
+await ap.goto('about:blank'); await ap.goto(B + '/#admin'); await ap.waitForSelector('#admin-password');
+await ap.fill('#admin-password', 'letmein'); await ap.press('#admin-password', 'Enter'); await ap.waitForSelector('.admin-control');
+check('#admin opens the admin page directly; Enter submits', true);
+await ap.click('button:has-text("Log out of admin")'); await ap.waitForSelector('#admin-password');
+check('log out: back to the password form, admin cookie gone, tabs locked again', !(await actx.cookies()).some((c) => c.name === 'pl_admin' && c.value) && (await ap.locator('nav button.locked').count()) === 3);
+check('admin page: no page errors', aerr.length === 0, aerr.join('|'));
+await actx.close();
+
 // Mine-only + show tests filters
 await page.click('.toggle-row:has-text("Mine only")');
 check('mine-only keeps own card', (await page.locator('.submission-card').count()) === 1);
@@ -141,7 +183,10 @@ await dctx.close(); await fetch(B + '/__metrics?m=ok');
 await page.click('nav button:has-text("Synthesis")');
 check('locked: no run button', (await page.locator('button:has-text("Run synthesis")').count()) === 0);
 check('locked: lead-only message', await page.locator('text=Only the project lead can trigger synthesis.').isVisible());
-await page.click('button:has-text("Project lead? Unlock")');
+check('no admin button or link on the Synthesis page', (await page.locator('main button, main a').filter({ hasText: /unlock|admin|project lead/i }).count()) === 0);
+await page.click('nav button:has-text("Home")'); await page.click('.admin-link');
+await page.fill('#admin-password', 'letmein'); await page.click('.admin-login button'); await page.waitForSelector('.admin-control');
+await page.click('nav button:has-text("Synthesis")');
 await page.waitForSelector('button:has-text("Run synthesis")');
 check('unlocked: run button shows 1 contribution (tests excluded)', (await page.locator('button:has-text("Run synthesis")').innerText()).includes('1 contributions'));
 await page.click('.toggle-row:has-text("Include test submissions")');
@@ -155,12 +200,14 @@ check('LLM html is escaped', (await page.locator('#acc-syn-commons .syn-detail')
 check('last-run line uses participant and contribution counts', (await page.locator('text=/Last run:.*1 participant.*1 contribution.*tests excluded/').count()) === 1);
 await page.screenshot({ path: SHOTS + 'screens/shot-synthesis.png', fullPage: true });
 
-// Wrong key is rejected and re-locks
-await page.evaluate(() => sessionStorage.setItem('prometheus-lab-admin', 'wrong'));
-await page.reload(); await page.click('nav button:has-text("Synthesis")');
+// The server checks the admin cookie on every run: once it is gone, the run is refused and the controls disappear
+const noCookie = await fetch(B + '/api/synthesize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+check('synthesis API refuses a request without the admin cookie', noCookie.status === 401);
+await ctx.clearCookies({ name: 'pl_admin' });
 await page.click('button:has-text("Run synthesis")');
-await page.waitForFunction(() => document.querySelector('button.raw-toggle')?.textContent.includes('Unlock'));
-check('wrong key -> alert + re-lock', dialogs.some((d) => d.includes('not accepted')));
+await page.waitForEvent('dialog');
+await page.waitForFunction(() => !S.synthesizing);
+check('expired admin session -> alert + run controls hidden', dialogs.some((d) => d.includes('admin session has ended')) && (await page.locator('button:has-text("Run synthesis")').count()) === 0);
 
 // Light mode renders (prefers-color-scheme)
 const lctx = await browser.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'light' });

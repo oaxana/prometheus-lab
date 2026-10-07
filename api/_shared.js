@@ -1,6 +1,7 @@
 // Shared helpers for the serverless functions.
 // Files starting with "_" in api/ are NOT exposed as routes by Vercel.
 import Anthropic from '@anthropic-ai/sdk';
+import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
 export const MODEL = 'claude-sonnet-5-5';
 
@@ -70,6 +71,30 @@ export function parseJsonResponse(msg) {
   } catch {
     throw new HttpError(502, 'The model returned malformed JSON.');
   }
+}
+
+// ---------- admin (project lead) session ----------
+// POST /api/admin checks ADMIN_PASSWORD and sets an HttpOnly session cookie holding a keyed hash
+// (never the password). Changing ADMIN_PASSWORD logs every admin out.
+export const ADMIN_COOKIE = 'pl_admin';
+export const adminToken = (password) => createHmac('sha256', password).update('prometheus-lab-admin-v1').digest('hex');
+// Constant-time comparison (hashing first makes the two buffers the same length).
+export const safeEqual = (a, b) =>
+  timingSafeEqual(createHash('sha256').update(String(a)).digest(), createHash('sha256').update(String(b)).digest());
+
+export function getCookie(req, name) {
+  const hit = String(req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(name + '='));
+  return hit ? hit.slice(name.length + 1) : '';
+}
+
+export function isAdmin(req) {
+  const password = process.env.ADMIN_PASSWORD;
+  return !!password && safeEqual(getCookie(req, ADMIN_COOKIE), adminToken(password));
+}
+
+export function requireAdmin(req) {
+  if (!process.env.ADMIN_PASSWORD) throw new HttpError(503, 'ADMIN_PASSWORD is not configured on the server, so admin features are disabled.');
+  if (!isAdmin(req)) throw new HttpError(401, 'Admin login required.');
 }
 
 // Turn any thrown error into a JSON response. Never leaks keys or stack traces.

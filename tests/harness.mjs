@@ -10,13 +10,13 @@ process.env.ANTHROPIC_API_KEY = 'sk-test';
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${PORT}/anthropic`;
 process.env.SUPABASE_URL = `http://localhost:${PORT}/supabase`;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-test';
-process.env.ADMIN_KEY = 'letmein';
+process.env.ADMIN_PASSWORD = 'letmein';
 
 const summarize = (await import(`${ROOT}/api/summarize.js`)).default;
 const synthesize = (await import(`${ROOT}/api/synthesize.js`)).default;
 const googleDoc = (await import(`${ROOT}/api/google-doc.js`)).default;
 const mapPillars = (await import(`${ROOT}/api/map-pillars.js`)).default;
-const testPersonaSubmit = (await import(`${ROOT}/api/test-persona-submit.js`)).default;
+const admin = (await import(`${ROOT}/api/admin.js`)).default;
 const metrics = (await import(`${ROOT}/api/metrics.js`)).default;
 const suggestedPillars = (await import(`${ROOT}/api/suggested-pillars.js`)).default;
 // Fake Google: only the google hosts are intercepted; everything else (Anthropic fake, Supabase fake) goes to the real fetch.
@@ -264,14 +264,6 @@ async function fakeSupabase(req, res, url, body) {
     db.submissions.push({ id: randomUUID(), ts: Date.now(), ...row });
     res.writeHead(201); return res.end();
   }
-  if (p === '/submissions' && req.method === 'DELETE') {
-    if (req.headers.apikey !== 'service-test') return json(res, 401, { message: 'Service role required' });
-    const value = (name, prefix) => String(url.searchParams.get(name) || '').replace(prefix, '');
-    const id = value('id', /^eq\./), uid = value('uid', /^eq\./);
-    const i = db.submissions.findIndex((s) => s.id === id && s.uid === uid && !s.participant_id && s.is_test === true);
-    const deleted = i >= 0 ? db.submissions.splice(i, 1) : [];
-    return json(res, 200, deleted.map((s) => ({ id: s.id })));
-  }
   if (p === '/submissions' && req.method === 'GET') {
     return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id, discovery_input_id: s.discovery_input_id ?? null })));
   }
@@ -303,10 +295,10 @@ http.createServer(async (req, res) => {
       if (metricsMode === 'fail') return json(res, 500, { error: 'down' });
       return metrics(req, vercelRes(res));
     }
-    if (url.pathname === '/api/summarize' || url.pathname === '/api/map-pillars' || url.pathname === '/api/synthesize' || url.pathname === '/api/google-doc' || url.pathname === '/api/test-persona-submit') {
+    if (url.pathname === '/api/summarize' || url.pathname === '/api/map-pillars' || url.pathname === '/api/synthesize' || url.pathname === '/api/google-doc' || url.pathname === '/api/admin') {
       const raw = await readBody(req);
       req.body = raw ? JSON.parse(raw) : undefined;
-      const handler=url.pathname.endsWith('map-pillars')?mapPillars:url.pathname.endsWith('summarize')?summarize:url.pathname.endsWith('google-doc')?googleDoc:url.pathname.endsWith('test-persona-submit')?testPersonaSubmit:synthesize;
+      const handler=url.pathname.endsWith('map-pillars')?mapPillars:url.pathname.endsWith('summarize')?summarize:url.pathname.endsWith('google-doc')?googleDoc:url.pathname.endsWith('/admin')?admin:synthesize;
       return handler(req, vercelRes(res));
     }
     if (url.pathname === '/config.js') {
