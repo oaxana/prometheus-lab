@@ -7,7 +7,8 @@ const dialogs = []; let accept = false;
 p.on('dialog', async (d) => { dialogs.push(d.message()); accept ? await d.accept() : await d.dismiss(); });
 const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
 const submit = async (text) => { await p.click('nav button:has-text("Submit")'); await p.fill('#voice-text', text); await p.click('main .btn-primary:has-text("Submit")'); await p.waitForSelector('.submission-card'); };
-await p.goto(B); await submit('first voice'); await submit('second voice');
+await p.goto(B);await p.click('nav button:has-text("Submit")');await p.fill('#auth-email','delete@example.com');await p.click('button:has-text("Send code")');await p.fill('#auth-code','123456');await p.click('button:has-text("Verify")');await p.waitForSelector('#voice-text');
+await submit('first voice'); await submit('second voice');
 check('two cards, each with Delete', (await p.locator('.submission-card').count()) === 2 && (await p.locator('button:has-text("Delete")').count()) === 2);
 await p.screenshot({ path: 'screens/shot-delete.png', fullPage: true });
 // cancel the confirm -> nothing deleted
@@ -24,7 +25,7 @@ check('heading count updates to (1)', (await p.locator('h2').first().innerText()
 const p2 = await (await b.newContext()).newPage(); await p2.goto(B); await p2.click('nav button:has-text("Voices")'); await p2.waitForSelector('.submission-card');
 check("other visitor sees the card but no Delete", (await p2.locator('button:has-text("Delete")').count()) === 0);
 const id = (await (await fetch(B + '/__db')).json()).submissions[0].id;
-const forged = await p2.evaluate(async ([id]) => (await sb.rpc('delete_my_submission', { p_id: id, p_uid: 'someone-elses-uid' })).data, [id]);
+const forged = await p2.evaluate(async ([id]) => (await sb.rpc('delete_my_submission', { p_id: id, p_test_uid: 'someone-elses-uid' })).data, [id]);
 check('forged delete by other visitor returns false', forged === false);
 check('row still exists after forged attempt', (await (await fetch(B + '/__db')).json()).submissions.length === 1);
 check('no page errors', errs.length === 0, errs.join('|'));

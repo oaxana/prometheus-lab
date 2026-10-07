@@ -9,6 +9,8 @@ const GOOD = 'https://docs.google.com/document/d/GOODDOCaaaaaaaaaaaaaaaaaaaaaaaa
 const SLIDES = 'https://docs.google.com/presentation/d/GOODSLIDESaaaaaaaaaaaaaaaaaaaaaa/edit#slide=id.p';
 const names = async () => p.locator('.file-preview .name').allInnerTexts();
 await p.goto(B); await p.click('nav button:has-text("Submit")');
+await p.fill('#auth-email','files@example.com');await p.click('button:has-text("Send code")');await p.fill('#auth-code','123456');await p.click('button:has-text("Verify")');await p.waitForSelector('#drop-zone');
+await p.locator('.toast').waitFor({state:'detached'});
 check('drop zone lists .pptx', (await p.locator('.drop-zone').innerText()).includes('.pptx'));
 check('file input accepts .pptx', (await p.locator(input).getAttribute('accept')).includes('.pptx'));
 

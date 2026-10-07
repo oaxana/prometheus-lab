@@ -1,10 +1,10 @@
 import { ROOT } from './lib.mjs';
 import { PGlite } from '@electric-sql/pglite'; import fs from 'node:fs';
+import { installSchema, asUser, asOwner } from './sql-setup.mjs';
 const db = new PGlite(); let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
-await db.exec(`create role anon nologin; create role authenticated nologin; grant usage on schema public to anon, authenticated;`);
-await db.exec(fs.readFileSync(ROOT + '/supabase-setup.sql', 'utf8').replace('create extension if not exists pgcrypto;', ''));
-await db.exec('grant all on all tables in schema public to anon, authenticated');
+await installSchema(db, false);
+await asOwner(db);
 await db.exec(fs.readFileSync(ROOT + '/seed-test-voices.sql', 'utf8'));
 const rows = (await db.query('select * from submissions')).rows;
 check('12 rows inserted, all constraints satisfied', rows.length === 12);
@@ -13,10 +13,10 @@ check('all flagged test (excluded from synthesis by default)', rows.every(r => r
 const covered = new Set(rows.flatMap(r => r.pillars));
 check('pillars covered = 1,4,5,7,10,12', JSON.stringify([...covered].sort((a, b) => a - b)) === '[1,4,5,7,10,12]', [...covered].sort((a, b) => a - b).join(','));
 check('apostrophe-free text parsed fine / non-empty summaries', rows.every(r => r.summary.length > 20 && r.content.length > 50));
-await db.exec('set role anon');
+await asUser(db, null);
 const asMe = (await db.query(`select mine, content from public.list_submissions('my-own-uid-12345')`)).rows;
 check("as a visitor: none are 'mine' and no raw text leaks", asMe.length === 12 && asMe.every(r => r.mine === false && r.content === null));
-await db.exec('reset role');
+await asOwner(db);
 await db.exec("delete from public.submissions where uid like 'demo-voter-%'");
 check('cleanup line removes all of them', (await db.query('select count(*)::int c from submissions')).rows[0].c === 0);
 console.log(`\n${pass}/${total} passed`);

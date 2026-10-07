@@ -6,20 +6,14 @@ const POLL_MS=20000;
 
 let S={view:'home',submissions:[],synthesis:null,selectedPillars:new Set(),isOwner:false,
   synthesizing:false,submitting:false,anonymous:true,attachedFiles:[],attachedText:'',displayName:'',
-  isTest:false,showTests:false,showMine:false,synthIncludeTests:false,myId:null,openPillars:new Set(),openRaw:new Set(),
-  loaded:false,persona:0,gdocUrl:'',gdocBusy:false};
+  isTest:false,showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
+  loaded:false,persona:0,gdocUrl:'',gdocBusy:false,authReady:false,session:null,participantName:'',
+  authEmail:'',otpSent:false,authBusy:false,authError:''};
 let sb=null,adminKey='';
 
-// ---------- anonymous identity + admin key (browser storage, always wrapped) ----------
-const MAIN_UID_KEY='prometheus-lab-uid';
-// Project-lead testing: each persona is a separate anonymous person (its own ID), so one browser can play three people.
-const PERSONAS={1:{label:'Me',key:MAIN_UID_KEY},2:{label:'Persona 2',key:'prometheus-lab-uid-p2'},3:{label:'Persona 3',key:'prometheus-lab-uid-p3'}};
-function loadMyId(KEY=MAIN_UID_KEY){
-  try{const v=localStorage.getItem(KEY);if(v&&v.length>=8)return v;}catch(e){}
-  const id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join('');
-  try{localStorage.setItem(KEY,id);}catch(e){}
-  return id;
-}
+// ---------- Supabase participant session + admin key ----------
+// Test personas are deliberately test-only identities and never use the signed-in participant id.
+const PERSONAS={1:{label:'Me',uid:'test-persona-me'},2:{label:'Persona 2',uid:'test-persona-2'},3:{label:'Persona 3',uid:'test-persona-3'}};
 function loadAdminKey(){try{return sessionStorage.getItem('prometheus-lab-admin')||'';}catch(e){return '';}}
 function loadPersona(){try{return Number(sessionStorage.getItem('prometheus-lab-persona'))||0;}catch(e){return 0;}}
 function savePersona(n){try{n?sessionStorage.setItem('prometheus-lab-persona',String(n)):sessionStorage.removeItem('prometheus-lab-persona');}catch(e){}}
@@ -36,13 +30,13 @@ async function api(path,body,headers){
 function mapSubmission(r){return{id:r.id,pillars:r.pillars||[],summary:r.summary,autoTagged:r.auto_tagged,isTest:r.is_test,
   displayName:r.display_name,timestamp:r.timestamp,mine:r.mine,content:r.content};}
 function mapSynthesis(r){return r?{commons:r.commons||[],contested:r.contested||[],gaps:r.gaps||[],
-  timestamp:Date.parse(r.created_at),count:r.count,includedTests:r.included_tests}:null;}
+  timestamp:Date.parse(r.created_at),count:r.count,submissionCount:r.submission_count,includedTests:r.included_tests}:null;}
 
 async function refresh(){
   if(!sb)return;
   try{
     const [subs,syn]=await Promise.all([
-      sb.rpc('list_submissions',{p_uid:S.myId}),
+      sb.rpc('list_submissions',S.persona?{p_test_uid:PERSONAS[S.persona].uid}:{}),
       sb.from('synthesis').select('*').eq('id',1).maybeSingle()]);
     if(subs.error)throw subs.error;if(syn.error)throw syn.error;
     const next=(subs.data||[]).map(mapSubmission),nextSyn=mapSynthesis(syn.data);
@@ -54,19 +48,74 @@ async function refresh(){
   }catch(e){console.error(e);if(!S.loaded){S.loaded=true;showToast('Could not load voices — check your Supabase setup');render();}}
 }
 
-function init(){
+async function loadParticipant(){
+  if(!S.session){S.participantName='';S.displayName='';return;}
+  const {data,error}=await sb.from('participants').select('display_name').eq('id',S.session.user.id).maybeSingle();
+  if(error){console.error(error);S.participantName='';return;}
+  S.participantName=data?.display_name||'';
+  S.displayName=S.participantName;
+}
+async function syncSession(session){
+  S.session=session||null;S.authReady=true;S.authError='';
+  await loadParticipant();
+  await refresh();render();
+}
+async function init(){
   adminKey=loadAdminKey();S.isOwner=!!adminKey;
   S.persona=S.isOwner&&PERSONAS[loadPersona()]?loadPersona():0;
-  S.myId=loadMyId(S.persona?PERSONAS[S.persona].key:MAIN_UID_KEY);
   const cfg=window.PROMETHEUS_LAB_CONFIG||{};
   if(cfg.SUPABASE_URL&&cfg.SUPABASE_ANON_KEY&&window.supabase){
     sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,
-      {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-    refresh();
+      {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    const {data,error}=await sb.auth.getSession();
+    if(error)console.error(error);
+    await syncSession(data?.session||null);
+    sb.auth.onAuthStateChange((_event,session)=>setTimeout(()=>syncSession(session),0));
     setInterval(()=>{if(!document.hidden&&!S.submitting&&!S.synthesizing)refresh();},POLL_MS);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
-  }
+  }else S.authReady=true;
   render();
+}
+
+async function sendVerificationCode(){
+  const email=(document.getElementById('auth-email')?.value||S.authEmail).trim();
+  if(!/^\S+@\S+\.\S+$/.test(email)){S.authError='Enter a valid email address.';render();return;}
+  S.authEmail=email;S.authBusy=true;S.authError='';render();
+  const {error}=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true}});
+  S.authBusy=false;
+  if(error)S.authError=error.message||'Could not send the verification code.';
+  else S.otpSent=true;
+  render();
+}
+async function verifyParticipantCode(){
+  const token=(document.getElementById('auth-code')?.value||'').replace(/\s/g,'');
+  if(!token){S.authError='Enter the code from your email.';render();return;}
+  S.authBusy=true;S.authError='';render();
+  const {data,error}=await sb.auth.verifyOtp({email:S.authEmail,token,type:'email'});
+  S.authBusy=false;
+  if(error){S.authError=error.message||'That code was not accepted.';render();return;}
+  S.otpSent=false;await syncSession(data.session);showToast('Verified — your voice is ready');
+}
+function resetVerification(){S.otpSent=false;S.authError='';render();}
+async function signOutParticipant(){
+  if(!confirm('Sign out on this device?'))return;
+  const {error}=await sb.auth.signOut();
+  if(error)return alert('Error: '+error.message);
+  S.session=null;S.participantName='';S.displayName='';S.anonymous=true;S.otpSent=false;S.authEmail='';
+  await refresh();render();
+}
+async function saveParticipantName(name){
+  const clean=String(name||'').trim();
+  if(!clean||clean.length>80)throw new Error('Display name must be 1 to 80 characters.');
+  const {data,error}=await sb.rpc('set_my_display_name',{p_display_name:clean});
+  if(error)throw error;
+  S.participantName=data||clean;S.displayName=S.participantName;
+}
+async function editDisplayName(){
+  const name=prompt('Your display name or handle:',S.participantName||'');
+  if(name===null)return;
+  try{await saveParticipantName(name);await refresh();render();showToast('Display name saved');}
+  catch(e){alert('Error: '+(e.message||'could not save name'));}
 }
 function nav(v){S.view=v;render();window.scrollTo(0,0)}
 function filteredSubs(){let s=S.submissions;if(!S.showTests)s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(x=>x.mine);return s;}
@@ -108,10 +157,29 @@ function renderPillars(m){
 
 function renderSubmit(m){
   if(!sb){setupNeeded(m);return;}
+  if(!S.authReady&&!S.persona){m.innerHTML='<div class="loading"><div class="spinner"></div>Checking participant verification…</div>';return;}
+  if(!S.session&&!S.persona){
+    const testSwitcher=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
+    m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Verify once, then contribute anonymously or with your chosen display name.</p>
+    ${testSwitcher}
+    <div class="card verify-card"><h3>Verify you’re one participant</h3>
+      <p>Your email is used only by Supabase to make sure every person gets one voice. It is never included in synthesis or shown to other participants.</p>
+      ${S.authError?`<p class="auth-error">${esc(S.authError)}</p>`:''}
+      ${!S.otpSent?`<div class="auth-form"><input type="email" id="auth-email" autocomplete="email" placeholder="you@example.com" value="${esc(S.authEmail)}" oninput="S.authEmail=this.value"><button class="btn btn-primary" onclick="sendVerificationCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Sending…':'Send code'}</button></div>`
+      :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
+    </div>`;return;
+  }
   const chips=PILLARS.map(p=>`<button class="pillar-chip ${S.selectedPillars.has(p.id)?'selected':''}" onclick="togglePillar(${p.id})"><span class="emoji">${p.emoji}</span>${p.name}</button>`).join('');
   const fc=S.attachedFiles.map((f,i)=>`<div class="file-preview"><span>${f.type==='image'?'🖼️':'📄'}</span><span class="name">${esc(f.name)}</span><span style="color:var(--muted);font-size:11px">${f.type==='image'?'image':((f.text.length/1000).toFixed(0)+'k chars')}</span><button class="remove" onclick="removeFile(${i})">✕</button></div>`).join('');
   const personaRow=S.isOwner?`<div class="persona-row"><span class="persona-label">Testing as</span>${[[0,'Off'],...Object.entries(PERSONAS).map(([k,v])=>[+k,v.label])].map(([k,l])=>`<button class="pillar-chip ${S.persona===k?'selected':''}" onclick="setPersona(${k})">${l}</button>`).join('')}</div>`:'';
-  m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>${personaRow}
+  const identity=S.persona
+    ?`<div class="auth-status test-status"><span>🧪 Test persona: <strong>${esc(PERSONAS[S.persona].label)}</strong></span><span>Always excluded unless tests are included</span></div>`
+    :`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;
+  const naming=S.persona
+    ?`<div class="form-row"><span class="toggle-row">Submitting as <strong>${esc(PERSONAS[S.persona].label)}</strong></span></div>`
+    :`<div class="form-row"><div class="toggle-row" onclick="toggleAnon()"><div class="toggle ${S.anonymous?'on':''}"></div><span>Anonymous</span></div>
+      ${!S.anonymous?(S.participantName?`<span class="chosen-name">Submit as <strong>${esc(S.participantName)}</strong></span>`:`<input type="text" id="display-name" maxlength="80" placeholder="Choose one name or handle" value="${esc(S.displayName)}">`):''}</div>`;
+  m.innerHTML=`<h2>Share your voice</h2><p class="subtitle">Write, paste, or drop a file. Pick pillars if you know them — or skip and AI auto-detects.</p>${personaRow}${identity}
   <div class="drop-zone" id="drop-zone"><input type="file" accept=".txt,.docx,.pptx,.md,.rtf,.pdf,.png,.jpg,.jpeg,image/*,application/pdf" multiple onchange="handleFiles(this.files);this.value=''"><span class="icon">📂</span><span class="label">Drop files here or <strong>browse</strong><br><span style="font-size:12px;color:var(--muted)">.txt, .docx, .pptx, .pdf, .png, .jpg</span></span></div>${fc}
   <div class="form-row" style="margin:0 0 6px"><input type="text" id="gdoc-url" placeholder="Or paste a Google Docs / Slides link" value="${esc(S.gdocUrl)}" onkeydown="if(event.key==='Enter')addGoogleLink()"><button class="btn btn-secondary" style="padding:10px 18px;font-size:14px" onclick="addGoogleLink()" ${S.gdocBusy?'disabled':''}>${S.gdocBusy?'Adding…':'Add'}</button></div>
   <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Google files must be shared as “Anyone with the link can view”.</p>
@@ -119,10 +187,9 @@ function renderSubmit(m){
   <textarea id="voice-text" placeholder="What do you believe? What behaviors should the constitution enshrine? Paste from a doc, brain-dump, or write a sentence.">${esc(S.attachedText)}</textarea>
   <h3 style="margin-top:20px">Pillars <span style="font-weight:400;color:var(--muted);font-size:13px">(optional — AI auto-detects if you skip)</span></h3>
   <div class="pillar-grid">${chips}</div>
-  <div class="form-row"><div class="toggle-row" onclick="toggleAnon()"><div class="toggle ${S.anonymous?'on':''}"></div><span>Anonymous</span></div>
-  ${!S.anonymous?`<input type="text" id="display-name" maxlength="80" placeholder="Name or handle" value="${esc(S.displayName)}">`:''}</div>
-  <div class="form-row"><div class="toggle-row" onclick="S.isTest=!S.isTest;render()"><div class="toggle toggle-sm ${S.isTest?'on':''}" style="${S.isTest?'background:var(--muted)':''}"></div><span>Test submission</span></div>
-  ${S.isTest?'<span style="font-size:11px;color:var(--muted)">Excluded from synthesis by default</span>':''}</div>
+  ${naming}
+  ${S.persona?'':`<div class="form-row"><div class="toggle-row" onclick="S.isTest=!S.isTest;render()"><div class="toggle toggle-sm ${S.isTest?'on':''}" style="${S.isTest?'background:var(--muted)':''}"></div><span>Test submission</span></div>
+  ${S.isTest?'<span style="font-size:11px;color:var(--muted)">Excluded from synthesis by default</span>':''}</div>`}
   ${S.submitting?'<div class="loading"><div class="spinner"></div>Processing your voice...</div>'
   :`<button class="btn btn-primary" onclick="submitVoice()">Submit</button>`}`;
 }
@@ -149,7 +216,10 @@ function renderVoices(m){
     if(isMine){
       const c=s.content||'';
       const rawPreview=c.length>800?(c.slice(0,800)+'…'):c;
-      rawBlock=`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button><button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button><button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button><div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`;
+      const rawButton=c?`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button>`:'';
+      const testButton=S.persona?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
+      const rawContent=c?`<div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`:'';
+      rawBlock=`${rawButton}${testButton}<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button>${rawContent}`;
     }
     return`<div class="submission-card${isMine?' mine':''}${s.isTest?' test-card':''}">
       <div class="submission-meta">${esc(who)} · ${when}${s.autoTagged?' · <span style="color:var(--commons)">auto-tagged</span>':''}${isMine?' · <span class="mine-badge">yours</span>':''}${s.isTest?' · <span class="test-badge">test</span>':''}</div>
@@ -176,7 +246,9 @@ function renderSynthesis(m){
     sb_=`<div class="card"><div class="loading"><div class="spinner"></div>Reading all voices and finding patterns...</div></div>`;
   }else if(S.synthesis){
     const syn=S.synthesis,ts=syn.timestamp?new Date(syn.timestamp).toLocaleString():'';
-    sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${syn.count||'?'} voices · ${syn.includedTests?'tests included':'tests excluded'}</p>`;
+    const participantText=`${syn.count||'?'} participant${syn.count===1?'':'s'}`;
+    const contributionText=syn.submissionCount?` · ${syn.submissionCount} contribution${syn.submissionCount===1?'':'s'}`:'';
+    sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${participantText}${contributionText} · ${syn.includedTests?'tests included':'tests excluded'}</p>`;
     if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{
       // older saved syntheses had one summary + voices per pillar instead of a list of points
       const points=c.points?.length?c.points:[{point:c.summary,voices:c.voices}];
@@ -203,7 +275,7 @@ function renderSynthesis(m){
       <div class="toggle-row" onclick="S.synthIncludeTests=!S.synthIncludeTests;render()"><div class="toggle toggle-sm ${S.synthIncludeTests?'on':''}" style="${S.synthIncludeTests?'background:var(--muted)':''}"></div><span>Include test submissions (${testCount})</span></div>
     </div>`:''}
     ${real.length>0
-      ?`<button class="btn btn-primary" onclick="runSynthesis()">Run synthesis on ${real.length} voices</button>
+      ?`<button class="btn btn-primary" onclick="runSynthesis()">Run synthesis on ${real.length} contributions</button>
          <p style="font-size:12px;color:var(--muted);margin-top:6px">${S.synthIncludeTests?'Including test submissions':'Test submissions excluded'}</p>`
       :`<p style="font-size:13px;color:var(--muted)">All ${testCount} submissions are tests. Toggle "Include test submissions" above to analyze them.</p>`}
   </div>`:''}
@@ -220,10 +292,9 @@ function setPersona(n){
   document.getElementById('display-name')?.remove();
   const wasLabel=Object.values(PERSONAS).some(p=>p.label===S.displayName);
   S.persona=n;savePersona(n);
-  S.myId=loadMyId(n?PERSONAS[n].key:MAIN_UID_KEY);
-  S.isTest=n>1;   // fake people default to test submissions
+  S.isTest=!!n;   // every fake persona is permanently test-only
   if(n){S.anonymous=false;S.displayName=PERSONAS[n].label;}
-  else if(wasLabel){S.displayName='';S.anonymous=true;}
+  else if(wasLabel){S.displayName=S.participantName;S.anonymous=true;S.isTest=false;}
   render();refresh();}
 
 // ---------- files ----------
@@ -317,7 +388,7 @@ function togglePillarRef(id){S.openPillars.has(id)?S.openPillars.delete(id):S.op
 function toggleAllPillars(){if(S.openPillars.size===PILLARS.length)S.openPillars.clear();else PILLARS.forEach(p=>S.openPillars.add(p.id));render();}
 async function setTestFlag(id,flag){
   try{
-    const {data,error}=await sb.rpc('set_my_submission_test',{p_id:id,p_uid:S.myId,p_is_test:flag});
+    const {data,error}=await sb.rpc('set_my_submission_test',{p_id:id,p_is_test:flag});
     if(error)throw error;
     if(!data){alert('Could not update — this submission is not yours, or it is gone.');await refresh();return;}
     await refresh();render();
@@ -326,9 +397,16 @@ async function setTestFlag(id,flag){
 async function deleteMine(id){
   if(!confirm('Delete this submission? This cannot be undone.'))return;
   try{
-    const {data,error}=await sb.rpc('delete_my_submission',{p_id:id,p_uid:S.myId});
-    if(error)throw error;
-    if(!data){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
+    let deleted=false;
+    if(S.persona){
+      const result=await api('/api/test-persona-submit',{persona:S.persona,deleteId:id},{'x-admin-key':adminKey});
+      deleted=result.deleted===true;
+    }else{
+      const {data,error}=await sb.rpc('delete_my_submission',{p_id:id});
+      if(error)throw error;
+      deleted=data===true;
+    }
+    if(!deleted){alert('Could not delete — this submission is not yours, or it is already gone.');await refresh();return;}
     S.openRaw.delete('raw-'+id);
     await refresh();render();showToast('Your submission was deleted');
   }catch(e){alert('Error: '+(e.message||'could not delete'));}}
@@ -337,8 +415,9 @@ function toggleRaw(id){S.openRaw.has(id)?S.openRaw.delete(id):S.openRaw.add(id);
 // ---------- submit ----------
 async function submitVoice(){
   if(S.submitting)return;
+  if(!S.persona&&!S.session)return alert('Verify your email before contributing.');
   const textEl=document.getElementById('voice-text');const typed=textEl?.value?.trim()||'';
-  const nameEl=document.getElementById('display-name');const name=S.anonymous?'':(nameEl?.value?.trim()||S.displayName.trim());
+  const nameEl=document.getElementById('display-name');
   const textFiles=S.attachedFiles.filter(f=>f.type!=='image');
   const imageFiles=S.attachedFiles.filter(f=>f.type==='image');
   const fileTexts=textFiles.map(f=>`[From: ${f.name}]\n${f.text}`).join('\n\n');
@@ -358,11 +437,16 @@ async function submitVoice(){
   }catch(e){console.error('AI processing:',e);showToast('AI analysis: '+(e.message||'error'));}
   if(!summary)summary=fullText.slice(0,200)+(fullText.length>200?'…':'');
   try{
-    const {error}=await sb.from('submissions').insert({pillars,content:fullText,summary,auto_tagged:autoTagged,is_test:S.isTest,
-      uid:S.myId,display_name:name});
-    if(error)throw error;
-    S.selectedPillars=new Set();S.attachedFiles=[];S.attachedText='';S.displayName=S.persona?PERSONAS[S.persona].label:'';S.submitting=false;
-    const wasTest=S.isTest;S.isTest=S.persona>1;
+    if(S.persona){
+      await api('/api/test-persona-submit',{persona:S.persona,pillars,content:fullText,summary,autoTagged},{'x-admin-key':adminKey});
+    }else{
+      if(!S.anonymous&&!S.participantName)await saveParticipantName(nameEl?.value||S.displayName);
+      const {error}=await sb.rpc('submit_submission',{p_pillars:pillars,p_content:fullText,p_summary:summary,
+        p_auto_tagged:autoTagged,p_is_test:S.isTest,p_anonymous:S.anonymous});
+      if(error)throw error;
+    }
+    S.selectedPillars=new Set();S.attachedFiles=[];S.attachedText='';S.displayName=S.persona?PERSONAS[S.persona].label:S.participantName;S.submitting=false;
+    const wasTest=S.persona||S.isTest;S.isTest=!!S.persona;
     await refresh();
     showToast(wasTest?'Test submission saved':'Your voice has been added to the fire');nav('voices');
   }catch(e){S.submitting=false;render();alert('Error: '+(e.message||e.code||'could not save'));}}

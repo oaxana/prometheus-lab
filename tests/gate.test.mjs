@@ -27,6 +27,7 @@ for (const p of ['/config.js', '/app.js', '/styles.css', '/index.html', '/anythi
 r = await mw(req('/api/summarize', { method: 'POST', body: '{}' }));
 check('/api/summarize locked w/ JSON code', r.status === 401 && (await r.json()).code === 'crew_login');
 r = await mw(req('/api/synthesize', { method: 'POST' })); check('/api/synthesize locked', r.status === 401);
+r = await mw(req('/api/test-persona-submit', { method: 'POST' })); check('/api/test-persona-submit locked', r.status === 401);
 
 // 3. wrong passwords
 let t = Date.now(); r = await mw(login('wrong'));

@@ -3,8 +3,9 @@
 -- Paste into Supabase → SQL Editor → Run.
 --
 -- Inserts 12 fake submissions from 3 different "people": Me, Persona 2 and
--- Persona 3 (each has its own anonymous ID starting with demo-voter-). They are
--- flagged as TEST, so on the Synthesis tab switch on "Include test submissions".
+-- Persona 3. These legacy-compatible rows intentionally have participant_id =
+-- null and a uid starting with demo-voter-. They are flagged as TEST; real
+-- production rows must use submit_submission() and auth.uid() ownership.
 --
 -- Built-in design (what a good synthesis should find):
 --   CONTESTED : pillar 1  (Me: strict opt-in | Persona 2: signage + opt-out | Persona 3: hybrid)

@@ -86,21 +86,53 @@ function supabase() {
 }
 
 // Keep only well-formed items and take pillar names from our own list, so they always match the ids.
-// Anonymous submissions are shown as a count ("3 anonymous"), never as numbered voices.
-const ANON_LABEL = /^Anonymous voice \d+$/;
-const collapseAnon = (list) => {
-  const named = list.filter((a) => !ANON_LABEL.test(a));
-  const n = list.length - named.length;
-  return n ? [...named, `${n} anonymous`] : named;
+// Claude sees only run-local labels. This function maps those labels back to a saved public name or
+// a distinct-participant anonymous count; database/auth identifiers never enter the prompt or result.
+const labelFor = (n) => {
+  let out = '';
+  for (let i = n; i >= 0; i = Math.floor(i / 26) - 1) out = String.fromCharCode(65 + (i % 26)) + out;
+  return `Participant ${out}`;
 };
-const scrub = (text) => text.replace(/Anonymous voice \d+/gi, 'an anonymous voice');
+const scrub = (value, labels) => {
+  let out = str(value);
+  const privateLabels = new Set(labels);
+  for (const label of labels) {
+    const participant = label.match(/^Participant [A-Z]+/)?.[0];
+    if (participant) privateLabels.add(participant);
+  }
+  for (const label of [...privateLabels].sort((a, b) => b.length - a.length)) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(escaped, 'gi'), 'a participant');
+  }
+  return out;
+};
 const valid = (id) => Number.isInteger(id) && id >= 1 && id <= 12;
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
-function clean(out, authors) {
-  const known = new Set(authors);
-  // Keep only author labels we actually gave the model, once each.
-  const who = (list) => collapseAnon([...new Set((Array.isArray(list) ? list : []).map(str).filter((a) => known.has(a)))]);
-  const text = (v) => scrub(str(v));
+function clean(out, sources) {
+  const known = new Map(sources.map((s) => [s.label, s]));
+  const labels = [...known.keys()];
+  const who = (list) => {
+    const people = new Map();
+    for (const label of [...new Set((Array.isArray(list) ? list : []).map(str))]) {
+      const source = known.get(label);
+      if (!source) continue;
+      const current = people.get(source.personKey);
+      // If the same person supported a point both publicly and anonymously, the named
+      // contribution is enough to attribute that person by name without exposing the
+      // anonymous-only contribution.
+      if (!current || (!current.name && source.name)) people.set(source.personKey, source);
+    }
+    const nameCounts = new Map();
+    let anonymous = 0;
+    for (const source of people.values()) {
+      if (source.name) nameCounts.set(source.name, (nameCounts.get(source.name) ?? 0) + 1);
+      else anonymous++;
+    }
+    const publicLabels = [...nameCounts].map(([name, n]) => (n === 1 ? name : `${name} (${n} participants)`));
+    if (anonymous) publicLabels.push(`${anonymous} anonymous`);
+    return publicLabels;
+  };
+  const text = (v) => scrub(v, labels);
   const commons = (out.commons ?? [])
     .filter((c) => valid(c.pillarId))
     .map((c) => ({
@@ -135,33 +167,55 @@ export default async function handler(req, res) {
     const db = supabase();
     const { data: rows, error } = await db
       .from('submissions')
-      .select('pillars, content, summary, is_test, created_at, display_name')
+      .select('id, pillars, content, summary, is_test, created_at, display_name, participant_id, uid')
       .order('created_at', { ascending: true })
       .limit(1000);
     if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
     const voices = rows.filter((r) => includeTests || !r.is_test);
     if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
 
-    // Who said it: the name they chose to show (same name = same author), otherwise a numbered anonymous voice
-    // (one per submission). The numbers are only for the model; the saved result shows "N anonymous".
-    let anonCount = 0;
-    const authorOf = (r) => {
-      const name = (r.display_name ?? '').replace(/["<>]/g, '').trim();
-      return name || `Anonymous voice ${++anonCount}`;
+    // Group real submissions by the stable owner internally, but replace that owner with
+    // a run-local Participant A/B/C label. Legacy rows can still be grouped by their old uid;
+    // neither kind of identifier is sent to Claude.
+    const personKeys = [];
+    const personIndex = new Map();
+    const keyOf = (r, i) => r.participant_id ? `auth:${r.participant_id}` : r.uid ? `legacy:${r.uid}` : `row:${r.id ?? i}`;
+    voices.forEach((r, i) => {
+      const key = keyOf(r, i);
+      if (!personIndex.has(key)) {
+        personIndex.set(key, personKeys.length);
+        personKeys.push(key);
+      }
+    });
+
+    const sourceIndex = new Map();
+    const sources = [];
+    const sourceOf = (r, i) => {
+      const personKey = keyOf(r, i);
+      const name = (r.display_name ?? '').replace(/["<>]/g, '').trim().slice(0, 80);
+      const visibilityKey = `${personKey}|${name ? `named:${name}` : 'anonymous'}`;
+      if (!sourceIndex.has(visibilityKey)) {
+        const base = labelFor(personIndex.get(personKey));
+        const label = `${base} source ${sources.filter((s) => s.personKey === personKey).length + 1} (${name ? 'named' : 'anonymous'})`;
+        sourceIndex.set(visibilityKey, sources.length);
+        sources.push({ label, personKey, name });
+      }
+      return sources[sourceIndex.get(visibilityKey)];
     };
-    const labels = voices.map(authorOf);
-    const authors = [...new Set(labels)];
+    const rowSources = voices.map(sourceOf);
 
     const body = voices
       .map((s, i) => {
         const names = (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
-        return `<voice n="${i + 1}" author="${labels[i]}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</voice>`;
+        const source = rowSources[i];
+        return `<contribution n="${i + 1}" participant="${labelFor(personIndex.get(source.personKey))}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
       })
       .join('\n\n');
 
-    const prompt = `Analyze ${voices.length} submissions from ${authors.length} authors for the Burning Man AI Constitution.
+    const prompt = `Analyze ${voices.length} contributions from ${personKeys.length} distinct participants for the Burning Man AI Constitution.
 
-AUTHORS: ${authors.join(' | ')}
+RUN-LOCAL PARTICIPANTS: ${personKeys.map((_, i) => labelFor(i)).join(' | ')}
+SOURCE LABELS: ${sources.map((s) => s.label).join(' | ')}
 
 12 PILLARS:
 ${PILLAR_LIST}
@@ -175,8 +229,8 @@ Sort the pillars into three categories:
 - gaps: nobody (or almost nobody) addressed it. Say why the gap matters.
 
 Rules:
-- Name authors EXACTLY as written in the AUTHORS line, and only in the "voices" lists. An author may have several submissions; treat them as one person.
-- Never write author names or labels (such as "Anonymous voice 3") inside the text of a point, stance, tension or note.
+- Use SOURCE LABELS exactly as written above, and only in the "voices" lists. Multiple contributions and source labels can belong to one run-local participant; treat that participant as one person.
+- Never write participant/source labels inside the text of a point, stance, tension or note.
 - Every pillar goes in exactly one category. Be specific. Quote submissions where possible.`;
 
     const msg = await anthropic()
@@ -188,18 +242,25 @@ Rules:
       })
       .finalMessage();
 
-    const result = clean(parseJsonResponse(msg), authors);
+    const result = clean(parseJsonResponse(msg), sources);
 
     const { error: saveError } = await db.from('synthesis').upsert({
       id: 1,
       ...result,
-      count: voices.length,
+      count: personKeys.length,
+      submission_count: voices.length,
       included_tests: includeTests,
       created_at: new Date().toISOString(),
     });
     if (saveError) throw new HttpError(500, 'Synthesis ran but could not be saved to Supabase.');
 
-    return send(res, 200, { ...result, timestamp: Date.now(), count: voices.length, includedTests: includeTests });
+    return send(res, 200, {
+      ...result,
+      timestamp: Date.now(),
+      count: personKeys.length,
+      submissionCount: voices.length,
+      includedTests: includeTests,
+    });
   } catch (err) {
     return fail(res, err);
   }

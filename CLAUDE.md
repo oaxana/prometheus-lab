@@ -21,14 +21,23 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - The synthesis function's response shape is also what the frontend renders; change both together (and keep rendering of older saved shapes).
 - `tests/` has its own `package.json` so Vercel never installs Playwright/PGlite.
 
-## Where we left off (2026-10-05)
-Everything in README "Features" is built, deployed and passing local tests. Not yet verified with the real services: the new synthesis output from the real model (attribution, bullet layouts, "N anonymous"), a live Google **Doc** link, a real .pptx/.docx upload.
+## Identity architecture (local change, 2026-10-06)
+- Real participants use Supabase passwordless email OTP. The SDK owns persistent/refreshing sessions; never manually store Auth tokens.
+- `participants.id = auth.users.id`; its only user field is one non-unique `display_name`. Email remains only in Supabase Auth.
+- Real submission creation, listing private text, deletion and test-flag changes go through security-definer RPCs that derive ownership from `auth.uid()`. Never accept a participant id or arbitrary per-row name from the browser.
+- `submissions.uid` is nullable and retained only for historical/test rows. A legacy/test uid grants no raw-text access or mutation authority. Admin personas are service-role-managed, forced-test rows with `participant_id = null`; create/delete goes through the admin-key-checked Vercel endpoint.
+- Synthesis groups by stable id server-side, substitutes per-run Participant A/B labels before Claude, and maps labels to public saved names or distinct anonymous counts after the response. No email, UUID, uid, session data, or public display name is sent to Claude.
+- `count` in `synthesis` is distinct participants; `submission_count` is contribution rows.
+- Auth email delivery uses `supabase/functions/send-email`: a signed Send Email Hook that sends the OTP through Resend. Its three values (`RESEND_API_KEY`, `SEND_EMAIL_HOOK_SECRET`, `AUTH_EMAIL_FROM`) belong in Supabase Edge Function secrets, never Vercel or git.
+
+## Where we left off (2026-10-06)
+The Resend sending domain, three Edge Function secrets, deployed `send-email` function, and live Supabase Send Email Hook are complete. A real six-digit OTP was delivered and verified through the local frontend. The verified-participant frontend/database changes are **not committed, pushed, migrated, or deployed**. A read-only live check confirmed that `participants` and `synthesis.submission_count` do not exist yet. Run `supabase-setup.sql` immediately before deploying the frontend because it disables the old browser-UID submission path. See README "Setup from scratch" and "Project status" for exact steps and deployment order.
 
 **Next up, in order**
-1. Have the owner run synthesis on the seed data (`seed-test-voices.sql`) and review the real output; tune the prompt in `api/synthesize.js` if Contested/Commons/Gaps look thin or misattributed.
-2. **Privacy review**, which the owner explicitly deferred ("then we can figure out privacy issues after"). **Start with data access:** the GitHub repo is public and contains the Supabase anon key, so outsiders can read summaries/names/synthesis and insert rows straight through Supabase, bypassing the password gate (raw text stays private). Ask whether the owner made the repo private; the robust fix is moving reads/writes behind the gated `/api` and revoking the anon key's access. Then: named attribution in the public synthesis, meaning of "anonymous", retention, an attribution on/off switch.
-3. Decide whether to raise the AI text limits (8,000 chars/submission for summaries in `api/summarize.js`; 6,000 chars/submission in `api/synthesize.js`); long decks/docs are currently truncated for the AI.
-4. Confirm the owner set: Anthropic monthly spend limit; Vercel Firewall rate-limit rule on `/__login`.
-5. Before sharing widely (the DB held 10 test submissions + a saved synthesis at end of 2026-10-05): delete test data (`delete from public.submissions where uid like 'demo-voter-%';` and any manual tests), then share `SITE_PASSWORD` with the crew.
+1. Complete the SQL/frontend cutover: confirm Vercel access/settings, run SQL, immediately deploy the frontend, then test persistence and ownership with two real emails.
+2. Run synthesis on multiple contributions from one real participant plus another anonymous participant; inspect the real model output and stored JSON for attribution/privacy.
+3. Privacy defense in depth: public summaries/saved synthesis are still reachable with the public Supabase key outside the crew gate, although production inserts and private content are now Auth-protected. Consider gated read APIs.
+4. Decide whether to raise AI text limits (8,000 summary / 6,000 synthesis characters per contribution).
+5. Monitor Anthropic/Resend usage as the crew grows; the Anthropic limit, Vercel `/__login` firewall rule, and Supabase Auth cooldown/expiry are confirmed configured.
 
-Backlog ideas: "Clear saved synthesis" button; separate models for summaries vs synthesis; `X-Frame-Options`/CSP; per-person access; export synthesis.
+Backlog ideas: parallel/durable synthesis orchestration as a separate future project (possibly Cloudflare Workers/Queues/Workflows; do not add it casually); trusted claiming of historical pre-Auth rows; "Clear saved synthesis"; separate models; `X-Frame-Options`/CSP; per-person crew access; export synthesis.
