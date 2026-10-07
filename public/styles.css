@@ -119,6 +119,7 @@ input[type="text"]:focus,input[type="email"]:focus,input[type="password"]:focus{
 .wz-eyebrow{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px}
 .wz-sub{margin:20px 0 10px}.wz h3{margin-top:18px}
 .wz-help{display:block;font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.45}
+.wz-help-spaced{margin-bottom:18px}
 .wz-meta{font-size:11px;color:var(--muted);white-space:nowrap}
 .wz-label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}
 .wz-note{font-size:13px;color:var(--text);background:var(--amber-dim);border-radius:8px;padding:10px 12px;margin:12px 0}

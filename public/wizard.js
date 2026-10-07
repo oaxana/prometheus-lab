@@ -110,6 +110,7 @@ function wzStep2(){
     :W.dMode==='voice'?wzRecorder('d'):'';
   return `<p class="wz-eyebrow">Step 2</p>${wzTitle('What topics matter most to you?')}
     <p class="subtitle">Before we show you what we’re working with, we’d like to hear from you. In your own words, what are the most important topics to address as humans and AI begin to coexist?</p>
+    <p class="wz-help wz-help-spaced">These will become Pillars or themes. You will have the option to add in-depth ideas and upload documents on the next page.</p>
     <div class="wz-cards two">${wzModeCard(W.dMode==='text','pencil','Write it','','wzSetDMode(\'text\')','dm-text')}${wzModeCard(W.dMode==='voice','microphone','Say it','','wzSetDMode(\'voice\')','dm-voice')}</div>
     <div class="wz-inline">${area}</div>${wzNav({nextOk:wzValid(2)})}`;}
 function wzSetDMode(m){wzSyncFields();wzStopAllRec();W.dMode=m;render();}

@@ -2,6 +2,8 @@
 
 Read this first, then `README.md` (full docs, decisions, status). This file holds the rules and the current to-do list.
 
+**Current status and next steps:** see "Where we left off (2026-10-07, demo day)" below.
+
 ## What this is
 Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/JS in `public/`, Supabase (Postgres), Vercel serverless functions in `api/` calling Claude (`claude-sonnet-5-5`), password gate in `middleware.js`. Live: https://prometheus-lab-xi.vercel.app. Repo: github.com/oaxana/prometheus-lab (branch `main` auto-deploys to Vercel).
 
@@ -57,26 +59,38 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - Synthesis chevrons sit on the LEFT of every head (same ▸/▾ look and 19px size as Voices, rotated by CSS via class `rot`); the participant `(N)` pill is absolutely positioned at the right of the pillar row.
 - Fonts DM Sans + Space Mono (Google Fonts link in `index.html`) and the `--syn-*` colour tokens are scoped to `.syn`; the rest of the app keeps its own palette. Real model output for the new fields is unverified (tests use fakes).
 
-## Admin page (2026-10-07, demo prep; uncommitted until the owner says "commit and push")
+## Admin page (deployed 2026-10-07, commit `91db6a4`)
 - Muted "Admin" link in the Home footer (also `/#admin`) → `renderAdmin()` in `public/app.js`. Password goes to `POST /api/admin` (`api/admin.js`), checked against `ADMIN_PASSWORD` server-side; success sets HttpOnly, SameSite=Strict, session-only cookie `pl_admin` (HMAC, never the password). Helpers `isAdmin`/`requireAdmin` in `api/_shared.js`; `api/synthesize.js` uses `requireAdmin`. No `ADMIN_PASSWORD` → admin is off (503).
 - Controls are the `ADMIN_CONTROLS` array in `app.js` (one card each). v1: "Unlock all tabs", stored as the plain session cookie `pl_unlock_tabs=1`, honoured only while `S.isAdmin`. Logging in alone does not unlock tabs. "Run synthesis" stays on the Synthesis tab for admins.
-- `ADMIN_PASSWORD` must exist in Vercel (Production + Preview) BEFORE this code is pushed; `ADMIN_KEY` can be deleted from Vercel afterwards.
+- `ADMIN_PASSWORD` is set in Vercel (the owner added it before the push). `ADMIN_KEY` is unused and can be deleted from Vercel.
 - Phase 1 of demo prep is done: tag `pre-demo-snapshot-2026-10-07` (= `a4a555d`) pushed; all data backed up to `backups/2026-10-07.json` (git-ignored, has raw text + the owner's email) and wiped from the one Supabase project with `scripts/backup-and-wipe.mjs --wipe` (12 submissions, 2 discovery inputs, 1 synthesis, 1 participant, 1 auth user, 0 files → all 0). There is only ONE database: local scripts and the live site share it.
 
 ## Workshop seed + synthesis prompt (2026-10-07, demo prep)
 - `seed/workshop-2026-10-01.json` = 14 anonymized per-speaker voices (Participant A–N, order of first substantive contribution; names, employers, orgs, camps, products and personal details paraphrased out). The raw transcript and any name→label mapping are deliberately NOT in the repo (repo is public); never add them. `scripts/seed-transcript.mjs` prints (no flag), `--insert`s or `--replace`s them as non-test rows with `uid seed-workshop-2026-10-01-<letter>`, `display_name` = label, `contribution_type` = "Workshop transcript, Oct 1 2026", created one second apart in label order so synthesis's run-local labels match the labels inside the texts.
 - Seeded + synthesized against the one database on 2026-10-07. The owner's nine sanity themes (AI vs human-first; consent/recording/artists; experiences to protect; agent accountability; money in scope; future-proofing; phones/connectivity as culture, light touch; mischief and fun; messy and fast, brainstorm then merge) all surfaced in the saved run (7 commons, 2 contested, 3 gaps: Access, Education, Hard Constraints). Real model output varies run to run.
-- The synthesis prompt in `api/synthesize.js` was changed (owner approved): a gap is a pillar NO author substantively addressed (passing remarks don't count, don't stretch); single-author points are reported; clearly opposed positions go to contested; voices only when the author's text supports it. The old "nobody (or almost nobody)" rule turned minority points into gap to-dos. Runs now take ~40–75 s, so `api/synthesize.js` maxDuration was raised from 60 to 300 in `vercel.json` (needs Fluid compute; verify the deploy).
+- The synthesis prompt in `api/synthesize.js` was changed (owner approved): a gap is a pillar NO author substantively addressed (passing remarks don't count, don't stretch); single-author points are reported; clearly opposed positions go to contested; voices only when the author's text supports it. The old "nobody (or almost nobody)" rule turned minority points into gap to-dos. Runs now take ~40–75 s, so `api/synthesize.js` maxDuration was raised from 60 to 300 in `vercel.json` (Vercel accepted it: `91db6a4` built Ready). Live run time on Vercel is not yet measured.
 
-## Where we left off (2026-10-07, end of session)
-Pushed this session: Voices tab changes (`9452dc3`), the Synthesis redesign + removal of the lock link (`6d5351e`, deployed via empty commit `ce1ae6e`), and a final tweak (bigger chevrons, Voices sections start collapsed, Synthesis chevrons on the left). The project lead who locked their own lead mode must submit one real voice before the Synthesis tab (and its "Project lead? Unlock") is reachable again. The theme is not a setting: light/dark follows the visitor's device (`prefers-color-scheme`); there is no toggle. The tab lock is per signed-in account (a real, non-test submission), never per IP. Still unverified live: real model output for the new synthesis fields and the suggested-pillar names. Synthesis toggle "Include test submissions" still has the old grey inline style.
+## Where we left off (2026-10-07, demo day) — READ THIS FIRST in a new session
+The owner demoed the app on 2026-10-07 and will resume after the demo. Work was done in owner-approved phases (summarise, wait for "go").
+- **Live now (commit `91db6a4`, Vercel Ready, gate verified 401 on every path):** Admin page, personas removed, new synthesis prompt, synthesize maxDuration 300.
+- **Database (the ONLY one; local scripts hit production):** 14 seeded workshop voices + the reviewed synthesis (7 commons / 2 contested / 3 gaps, all nine themes). Plus 1 anonymous `is_test` submission made by the owner's live check at 19:01 UTC (excluded from synthesis; owner can delete it in Voices → Show tests). Anything newer was added during/after the demo.
+- **Local backups (git-ignored, private, never share/commit):** `backups/2026-10-07.json` = all pre-demo data (raw text + owner's email); `backups/2026-10-07-demo-state.json` = the reviewed demo synthesis + seeded rows, in case a post-demo re-run comes out worse. There is no restore script by design (owner's choice); restoring the synthesis = upsert its `synthesis` object into `public.synthesis` id 1 with the service-role key, only if the owner asks.
+- **Local secrets:** `.env.local` (git-ignored) holds `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (an `sb_secret_…` key) and `ANTHROPIC_API_KEY`, pasted by the owner; never print them. Check presence by length/prefix only. Run scripts with `node --env-file=.env.local …`.
+- **Uncommitted:** only this CLAUDE.md update (deliberately not pushed on demo day to avoid a redeploy). Commit it with the next change when the owner says "commit and push".
+
+**Next up after the demo, in order**
+1. Ask how the demo went and whether people added submissions. If the owner re-ran synthesis on the live site, note how long it took on Vercel (never measured live; local runs 36–75 s) and re-check the result: nine themes still present, no real names/orgs (the transcript's names are NOT stored anywhere; scan for generic risks: capitalised proper nouns, emails, UUIDs), attribution sanity.
+2. Housekeeping the owner may want: delete `ADMIN_KEY` in Vercel; delete the owner's 19:01 test row; blank/delete `.env.local` keys or revoke the Anthropic key if no more scripts are planned.
+3. Owner wants **synthesis runnable by everyone** later ("we'll need to build that for everyone later, not right now"): design before building (cost/abuse: Anthropic spend, rate limit, who may trigger, concurrent runs, 1–2 min runtime). Discuss first.
+4. Old list still valid: Account B privacy check must be redone with two fresh real emails (the wipe removed the old accounts and the "account A" test row); live-test the wizard (voice, uploads, Google Doc); gated read APIs for public summaries/synthesis; AI text limits; monitor Anthropic/Resend usage.
+- Known quirks: synthesis attribution is mostly but not perfectly faithful (e.g. it once credited a participant with a view they didn't state); the "Include test submissions" toggle on Synthesis still has the old grey inline style.
 
 ## Earlier status (2026-10-06)
 The verified-participant cutover is complete. The owner ran the full `supabase-setup.sql`; commit `adcfce8` was pushed to `main`; Vercel deployed it successfully; and the production alias is live. Post-deploy probes confirmed the crew gate returns `401` for the site, config, and every API without its cookie; the new submission RPC and synthesis column exist; and direct anonymous reads of private participant/submission tables are denied. Supabase Auth's project email quota was raised to 60/hour after the previous two-email/hour quota blocked testing; keep the per-user resend cooldown at 60 seconds.
 
 The hosted Account A smoke test passed: six-digit OTP verification, an `is_test` submission, owner-only raw text and controls, and persistence after refresh. One test row containing `Production ownership test — account A` intentionally remains in production for the cross-account check. The owner stopped before Account B and wants to resume in a new session.
 
-**Next up, in order**
+**Next up (as of 2026-10-06; superseded by the demo-day list above)**
 0. Live-test the wizard (README → "Not yet verified": text, voice on phone + laptop, PDF/docx/pptx upload, Google Doc, edit, delete + Storage cleanup, real mapping/summary quality) and fix whatever turns up.
 1. Complete Account B using a second real email and separate browser session. Confirm Account B can see Account A's public summary but not its raw text, `yours` badge, test toggle, or delete control. Create/delete B's own test, then return to A and delete A's test.
 2. Run synthesis on multiple contributions from one real participant plus another anonymous participant; inspect the real model output and stored JSON for attribution/privacy.
