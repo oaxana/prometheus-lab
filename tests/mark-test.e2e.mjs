@@ -1,10 +1,10 @@
-import { launch, runWizard } from './lib.mjs';
+import { launch, runWizard, openSubs } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch();
 const p = await (await b.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'dark' })).newPage();
 p.on('dialog', (d) => d.accept()); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
-const submit = async (t) => { await runWizard(p, { text: t }); await p.click('nav button:has-text("Voices")'); await p.waitForSelector('.submission-card'); };
+const submit = async (t) => { await runWizard(p, { text: t }); await p.click('nav button:has-text("Voices")'); await p.waitForSelector('.submission-card'); await openSubs(p); };
 await p.goto(B);await p.click('nav button:has-text("Submit")');await p.fill('#auth-email','mark@example.com');await p.click('button:has-text("Send code")');await p.fill('#auth-code','123456');await p.click('button:has-text("Verify")');await p.waitForSelector('#wz-start');
 await submit('voice A'); await submit('voice B');
 const heading = async () => (await p.locator('h2').first().innerText());
@@ -29,7 +29,7 @@ await p.click('.toggle-row:has-text("Include test submissions")');
 check('include-tests brings it back (2)', (await p.locator('button:has-text("Run synthesis")').innerText()).includes('2 contributions'));
 // unmark it again
 p.on('dialog', (d) => d.accept());
-await p.click('nav button:has-text("Voices")'); await p.click('.toggle-row:has-text("Show tests")');
+await p.click('nav button:has-text("Voices")'); await openSubs(p); await p.click('.toggle-row:has-text("Show tests")');
 await p.locator('button:has-text("Unmark test")').click();
 await p.waitForFunction(() => !document.querySelector('.test-card'));
 check('unmarked: back to 2 real voices', (await heading()).includes('(2)'));

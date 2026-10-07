@@ -10,7 +10,7 @@ let S={view:'home',submissions:[],synthesis:null,isOwner:false,
   loaded:false,persona:0,authReady:false,session:null,participantName:'',
   authEmail:'',otpSent:false,authBusy:false,authError:'',
   metrics:null,metricsState:'',metricsKey:-1,
-  acc:{submissions:true,suggested:false},suggested:null,suggestedState:'',suggestedKey:-1};   // Voices accordions (open/closed) + suggested-pillar cache   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
+  acc:{submissions:false,suggested:false},suggested:null,suggestedState:'',suggestedKey:-1};   // Voices accordions (open/closed) + suggested-pillar cache   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
 let sb=null,adminKey='';
 
 // ---------- Supabase participant session + admin key ----------
@@ -392,14 +392,14 @@ function synPillarRow(kind,c){
   const id=`syn-${kind}-${c.id??String(c.name).replace(/\W+/g,'-')}`,open=!!S.acc[id];
   const meter=`<span class="syn-meter" role="img" aria-label="${kind==='commons'?'Consensus':'Largest group'} ${c.pct}%"><i style="width:${c.pct}%"></i></span>`;
   return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow who-host">
-    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')">${meter}<span class="syn-pname">${pillarEmoji(c.id)} ${esc(c.name)}</span><span class="acc-chev rot" aria-hidden="true">▸</span></button>${synPill(c.people)}</div>
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span>${meter}<span class="syn-pname">${pillarEmoji(c.id)} ${esc(c.name)}</span></button>${synPill(c.people)}</div>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}>${synDetail(kind,c)}</div></section>`;
 }
 function synGapRow(g){
   const id=`syn-gaps-${g.pillarId??String(g.pillar).replace(/\W+/g,'-')}`,open=!!S.acc[id];
   const sugg=g.suggestions?.length?g.suggestions:(PILLARS.find(p=>p.id===g.pillarId)?.bullets||[]).slice(0,4);   // older results: the pillar's own topics
   return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow">
-    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="syn-pname">${pillarEmoji(g.pillarId)} ${esc(g.pillar)}</span><span class="acc-chev rot" aria-hidden="true">▸</span></button></div>
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span><span class="syn-pname">${pillarEmoji(g.pillarId)} ${esc(g.pillar)}</span></button></div>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-detail">
       ${g.note?`<div class="syn-label">Why it matters</div><p class="syn-note">${esc(g.note)}</p>`:''}
       ${sugg.length?`<div class="syn-label">What to address next</div><ul class="syn-arrows">${sugg.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}</div></div></section>`;
@@ -407,7 +407,7 @@ function synGapRow(g){
 function synSection(key,tag,title,count,rows,empty){
   const id='syn-'+key,open=!!S.acc[id];
   return`<section class="acc syn-sec ${key}${open?' open':''}" id="acc-${id}">
-    <button class="syn-shead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="syn-tag">${tag}</span><span class="syn-stitle">${title}</span><span class="syn-scount">(${count})</span><span class="acc-chev rot" aria-hidden="true">▸</span></button>
+    <button class="syn-shead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span><span class="syn-tag">${tag}</span><span class="syn-stitle">${title}</span><span class="syn-scount">(${count})</span></button>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-rows">${rows||`<p class="acc-empty">${empty}</p>`}</div></div></section>`;
 }
 function renderSynthesisResult(syn){

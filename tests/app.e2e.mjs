@@ -1,4 +1,4 @@
-import { launch, runWizard } from './lib.mjs';
+import { launch, runWizard, openSubs } from './lib.mjs';
 
 
 const B = 'http://localhost:4173';
@@ -85,7 +85,7 @@ await page.click('nav button:has-text("Home")');
 await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent === '1');
 const realRows = (await (await fetch(B + '/__db')).json()).submissions.filter((r) => !r.is_test);
 check('home counts refresh after a submission (1 voice, pillars covered, 1 contribution)', (await page.locator('.stat-num').allInnerTexts()).join('|') === `1|${new Set(realRows.flatMap((r) => r.pillars)).size}/12|1`);
-await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card');
+await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card'); await openSubs(page);
 check('card shows AI summary, not raw text', (await page.locator('.summary-text').first().innerText()) === 'A short summary.');
 check('auto-tagged badge + pillar pills (1 and 3)', (await page.locator('.pill.auto').count()) === 2);
 check('"yours" badge', await page.locator('.mine-badge').isVisible());

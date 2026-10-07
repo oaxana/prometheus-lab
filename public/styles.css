@@ -223,7 +223,7 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .acc{margin-bottom:20px}
 .acc-head{display:flex;align-items:center;gap:8px;width:100%;padding:6px 0;margin-bottom:10px;background:0;border:0;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:17px;font-weight:600;text-align:left;cursor:pointer}
 .acc-head:hover .acc-chev{color:var(--accent)}
-.acc-chev{width:14px;color:var(--muted);font-size:14px;flex-shrink:0}
+.acc-chev{width:20px;color:var(--muted);font-size:19px;line-height:1;text-align:center;flex-shrink:0}
 .acc-count{color:var(--accent)}
 .acc-body{overflow:hidden;transition:max-height .3s ease}
 .acc-body.settled{overflow:visible}   /* so the names popup is never clipped */
@@ -250,23 +250,21 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .syn-sec{--c:var(--syn-commons);background:var(--syn-surface);border:1px solid var(--syn-line);border-left:3px solid var(--c);border-radius:var(--radius);margin-bottom:12px}
 .syn-sec.contested{--c:var(--syn-contested)}.syn-sec.gaps{--c:var(--syn-gaps)}
 .syn-shead,.syn-phead{display:flex;align-items:center;gap:10px;width:100%;background:0;border:0;text-align:left;cursor:pointer}
-.syn-shead{padding:14px 14px}
+.syn-shead{padding:14px 14px 14px 10px}
 .syn-tag{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 9px;border-radius:5px;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent);white-space:nowrap}
 .syn-stitle{font-size:15px;font-weight:600;flex:1;min-width:0}
 .syn-scount{font-family:'Space Mono',monospace;font-size:12px;color:var(--syn-muted)}
-.acc-chev.rot{display:inline-block;width:auto;font-size:15px;color:var(--syn-muted);transition:transform .25s ease;flex-shrink:0}
+.acc-chev.rot{display:inline-block;width:20px;text-align:center;font-size:19px;line-height:1;color:var(--syn-muted);transition:transform .25s ease;flex-shrink:0}
 .acc.open>.syn-shead .rot,.acc.open>.syn-prow .rot{transform:rotate(90deg)}
 .syn-rows{padding:0 10px 10px}
 .syn-pillar{border-top:1px solid var(--syn-line);margin-bottom:0}
 .syn-prow{position:relative}
-.syn-phead{padding:12px 92px 12px 6px}
+.syn-phead{padding:12px 56px 12px 4px}
 .syn-prow:not(.who-host) .syn-phead{padding-right:6px}
-.syn-phead .rot{position:absolute;right:8px;top:50%;margin-top:-9px}
-.syn-prow:not(.who-host) .syn-phead .rot{position:static;margin:0}
 .syn-pname{font-size:14px;font-weight:500;flex:1;min-width:0}
 .syn-meter{width:52px;height:6px;border-radius:3px;background:var(--syn-line);flex-shrink:0;overflow:hidden}
 .syn-meter i{display:block;height:100%;border-radius:3px;background:var(--c)}
-.syn-prow .sugg-count{position:absolute;right:34px;top:50%;transform:translateY(-50%);font-family:'Space Mono',monospace;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent)}
+.syn-prow .sugg-count{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:'Space Mono',monospace;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent)}
 .syn-prow .sugg-who{left:auto;right:6px;top:calc(50% + 16px);max-width:min(260px,calc(100% - 12px));background:var(--syn-bg);color:var(--syn-fg);border-color:var(--syn-line)}
 .syn-detail{padding:2px 8px 14px 8px;font-size:14px;line-height:1.55}
 .syn-label{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--syn-muted);margin:12px 0 6px}
@@ -291,5 +289,5 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 @media(hover:hover){.dot:hover>.sugg-who,.dot:focus-visible>.sugg-who{display:block}}
 .spec-poles{display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-family:'Space Mono',monospace;font-size:11px;color:var(--syn-muted)}
 .spec-poles span:last-child{text-align:right}
-@media(max-width:420px){.syn-meter{width:38px}.syn-phead{padding-right:84px}.syn-stat{padding:8px 1px}.syn-num{font-size:15px}.syn-slabel{font-size:9px}.syn-tag{font-size:10px;padding:3px 7px}}
+@media(max-width:420px){.syn-meter{width:38px}.syn-phead{padding-right:52px}.syn-stat{padding:8px 1px}.syn-num{font-size:15px}.syn-slabel{font-size:9px}.syn-tag{font-size:10px;padding:3px 7px}}
 @media(prefers-reduced-motion:reduce){.acc-chev.rot{transition:none}}

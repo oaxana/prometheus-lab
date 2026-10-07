@@ -1,7 +1,7 @@
 // The eight-step submission wizard, driven in a real browser against the fake backend.
 // Uses Chrome's fake microphone and a fake speech service, so recording + upload are exercised
 // but the quality of real transcription is NOT (that depends on the visitor's browser).
-import { launchWithMic, runWizard, FAKE_SPEECH } from './lib.mjs';
+import { launchWithMic, runWizard, FAKE_SPEECH, openSubs } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launchWithMic();
@@ -256,7 +256,7 @@ check('nothing evil landed in storage', !(await db()).objects.some((o) => o.path
 
 // ---------------- Delete cleans up storage + discovery
 const objsBefore = (await db()).objects.length, discBefore = (await db()).discovery.length;
-await p.click('nav button:has-text("Voices")'); await p.click('.toggle-row:has-text("Mine only")'); await p.waitForSelector('.submission-card');
+await p.click('nav button:has-text("Voices")'); await p.click('.toggle-row:has-text("Mine only")'); await p.waitForSelector('.submission-card'); await openSubs(p);
 const cardCount = await p.locator('.submission-card').count();
 await p.locator('.submission-card:has-text("quiet hours") button:has-text("Delete"), .submission-card:has-text("Quiet hours") button:has-text("Delete")').first().click();
 await p.waitForFunction((n) => document.querySelectorAll('.submission-card').length < n, cardCount);

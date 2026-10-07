@@ -1,5 +1,5 @@
 // Voices tab: filter-aware counts, "Show tests" toggle colour, collapsible sections, Suggested Pillars.
-import { launch, runWizard } from './lib.mjs';
+import { launch, runWizard, openSubs } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch(); const errs = [];
@@ -17,7 +17,10 @@ const p = await mk(); await login(p, 'ada@example.com');
 await idea(''); await runWizard(p, { text: 'First voice' }); await voices(p);
 check('empty state when nothing is suggested', await p.locator('#acc-suggested .acc-empty:has-text("No new pillars suggested yet.")').count() === 1);
 check('Suggested Pillars header shows (0) and starts collapsed (▸)', (await p.locator('#acc-suggested .acc-head').innerText()).replace(/\s+/g, ' ').includes('Suggested Pillars (0)') && (await p.locator('#acc-suggested .acc-chev').innerText()) === '▸' && (await p.locator('#acc-suggested .acc-head').getAttribute('aria-expanded')) === 'false');
-check('Submissions starts expanded (▾)', (await p.locator('#acc-submissions .acc-chev').innerText()) === '▾' && (await p.locator('#acc-submissions .submission-card').first().isVisible()));
+check('Submissions also starts collapsed (▸): the page lands with both sections closed', (await p.locator('#acc-submissions .acc-chev').innerText()) === '▸' && (await p.locator('#acc-submissions .acc-head').getAttribute('aria-expanded')) === 'false' && (await p.locator('#acc-body-submissions').evaluate((e) => e.getBoundingClientRect().height)) === 0);
+check('chevron is bigger than before (19px, was 14px)', (await p.locator('#acc-submissions .acc-chev').evaluate((e) => getComputedStyle(e).fontSize)) === '19px');
+await openSubs(p);
+check('opening Submissions shows the cards (▾)', (await p.locator('#acc-submissions .acc-chev').innerText()) === '▾' && (await p.locator('#acc-submissions .submission-card').first().isVisible()));
 check('collapsed section is out of the tab order and invisible', (await p.locator('#acc-body-suggested').getAttribute('inert')) !== null && (await p.locator('#acc-body-suggested').evaluate((e) => e.getBoundingClientRect().height)) === 0);
 
 // 2. more voices: a named one, an anonymous one, a test one (all by Ada), then another person
@@ -28,7 +31,7 @@ const q = await mk(); await login(q, 'bob@example.com');
 await idea('rest and recovery spaces!'); await runWizard(q, { text: 'Bob voice' });
 
 // 3. counts follow the filters (Ada: 3 real + 1 test; Bob: 1 real). Reload so Ada sees Bob's voice without waiting for the 20 s poll.
-await p.reload(); await p.waitForSelector('.hero-cta'); await voices(p);
+await p.reload(); await p.waitForSelector('.hero-cta'); await voices(p); await openSubs(p);
 check('header: tests hidden -> real voices only (4)', (await heading(p)) === 'All Voices (4)', await heading(p));
 check('Mine only count: 3 (tests hidden)', (await mine(p)) === 'Mine only (3)', await mine(p));
 await p.click('.toggle-row:has-text("Show tests")');

@@ -72,3 +72,9 @@ export async function runWizard(p, o = {}) {
   await p.click('.wz-nav .btn-amber:has-text("Submit")');
   await p.waitForSelector('.wz-confirm');
 }
+
+// Voices starts with Submissions collapsed; this expands it (no-op if it is already open).
+export async function openSubs(p) {
+  const h = p.locator('#acc-submissions [data-acc-head]');
+  if ((await h.getAttribute('aria-expanded')) === 'false') { await h.click(); await p.waitForTimeout(400); }
+}
