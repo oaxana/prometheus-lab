@@ -13,9 +13,10 @@ check('cards offer "Mark as test"', (await p.locator('button:has-text("Mark as t
 await p.locator('button:has-text("Mark as test")').first().click();
 await p.waitForFunction(() => document.querySelectorAll('.submission-card').length === 1);
 check('marked card leaves the list (tests hidden)', true);
-check('heading shows 1 real + 1 test', (await heading()).includes('(1 + 1 test)'));
+check('heading counts only what is shown: 1 voice while tests are hidden', (await heading()).includes('(1)') && !(await heading()).includes('test'));
 check('toast explains', await p.locator('.toast:has-text("left out of synthesis")').isVisible());
 await p.click('.toggle-row:has-text("Show tests")');
+check('heading shows 1 real + 1 test once tests are shown', (await heading()).includes('(1 + 1 test)'));
 check('card visible again with test badge + "Unmark test"', (await p.locator('.test-card .test-badge').count()) === 1 && (await p.locator('button:has-text("Unmark test")').count()) === 1);
 await p.screenshot({ path: 'screens/shot-testflag.png', fullPage: true });
 // synthesis tab: real count excludes it, include-tests toggle brings it back

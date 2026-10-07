@@ -40,7 +40,7 @@ export default async function handler(req, res) {
           role: 'user',
           content: `Given the input below and these draft pillars, return:
 - "matched_pillars": the ids of the pillars the ideas clearly relate to (usually 1-4; none if nothing fits)
-- "new_ideas": ideas or themes in the input that do NOT clearly map to any existing pillar, each as a short phrase (genuinely new territory; leave empty if everything maps)
+- "new_ideas": ideas or themes in the input that do NOT clearly map to any existing pillar, each as a short pillar-style name of 2-5 words, e.g. "Rest and Recovery Spaces" (genuinely new territory; leave empty if everything maps)
 - "reasoning": one or two plain sentences explaining the mapping
 
 Pillars:

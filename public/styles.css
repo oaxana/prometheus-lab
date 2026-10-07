@@ -218,3 +218,20 @@ nav button.locked{opacity:.45}nav button.locked:hover{opacity:.7}nav button .ti-
 /* five tabs (two with a lock icon) can be wider than a phone: scroll from the left edge instead of clipping "Home" */
 nav{justify-content:safe center;padding-left:8px;padding-right:8px}
 nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
+
+/* Voices: collapsible sections + suggested pillars */
+.acc{margin-bottom:20px}
+.acc-head{display:flex;align-items:center;gap:8px;width:100%;padding:6px 0;margin-bottom:10px;background:0;border:0;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:17px;font-weight:600;text-align:left;cursor:pointer}
+.acc-head:hover .acc-chev{color:var(--accent)}
+.acc-chev{width:14px;color:var(--muted);font-size:14px;flex-shrink:0}
+.acc-count{color:var(--accent)}
+.acc-body{overflow:hidden;transition:max-height .3s ease}
+.acc-body.settled{overflow:visible}   /* so the names popup is never clipped */
+.acc-empty{font-size:13px;color:var(--muted);padding:4px 0 8px}
+.sugg-row{position:relative;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:8px;background:var(--surface);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;font-size:14px}
+.sugg-count{font-family:var(--font);font-size:11px;padding:2px 8px;border:0;border-radius:10px;background:var(--accent-dim);color:var(--accent);cursor:pointer}
+.sugg-count:hover,.sugg-count:focus-visible{outline:1px solid var(--accent)}
+.sugg-who{display:none;position:absolute;left:14px;top:100%;z-index:5;max-width:calc(100% - 28px);margin-top:2px;padding:6px 10px;background:var(--surface-hi);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text);box-shadow:0 4px 12px #0004}
+.sugg-row.open .sugg-who{display:block}
+@media(hover:hover){.sugg-count:hover+.sugg-who{display:block}}
+@media(prefers-reduced-motion:reduce){.acc-body{transition:none}}

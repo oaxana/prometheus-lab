@@ -9,7 +9,8 @@ let S={view:'home',submissions:[],synthesis:null,isOwner:false,
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
   loaded:false,persona:0,authReady:false,session:null,participantName:'',
   authEmail:'',otpSent:false,authBusy:false,authError:'',
-  metrics:null,metricsState:'',metricsKey:-1};   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
+  metrics:null,metricsState:'',metricsKey:-1,
+  acc:{submissions:true,suggested:false},suggested:null,suggestedState:'',suggestedKey:-1};   // Voices accordions (open/closed) + suggested-pillar cache   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
 let sb=null,adminKey='';
 
 // ---------- Supabase participant session + admin key ----------
@@ -220,10 +221,71 @@ function renderSubmit(m){
   renderWizard(document.getElementById('wz-root'));
 }
 
+// ---------- Voices: accordions + suggested pillars ----------
+// Suggested pillars come from /api/suggested-pillars (the table behind them has no browser read path). Cached for the session
+// and re-fetched only when the number of visible submissions changes, like the Home counts.
+async function fetchSuggested(key){
+  S.suggestedKey=key;S.suggestedState='loading';
+  try{
+    const r=await fetch('/api/suggested-pillars');
+    let d={};try{d=await r.json();}catch(e){}
+    if(r.status===401&&d.code==='crew_login'){location.reload();return;}
+    if(!r.ok||!Array.isArray(d.items))throw new Error('suggested '+r.status);
+    S.suggested=d.items;S.suggestedState='ok';
+  }catch(e){console.error(e);S.suggestedState='failed';}
+  if(S.view==='voices')render();
+}
+// "Show tests" decides whether test people count; the Mine-only filter does not apply (the server never says who is who).
+function suggestedGroups(){
+  return (S.suggested||[]).map(g=>({idea:g.idea,people:g.people.filter(p=>S.showTests||!p.isTest)})).filter(g=>g.people.length)
+    .sort((a,b)=>b.people.length-a.people.length||a.idea.localeCompare(b.idea));
+}
+function renderSuggested(groups){
+  if(S.suggestedState==='failed'&&!S.suggested)return '<p class="acc-empty">Couldn’t load suggested pillars right now.</p>';
+  if(!S.suggested)return '<p class="acc-empty">Loading…</p>';
+  if(!groups.length)return '<p class="acc-empty">No new pillars suggested yet.</p>';
+  return groups.map(g=>{
+    const names=g.people.map(p=>p.name).join(', ');
+    return`<div class="sugg-row"><span class="sugg-name">${esc(g.idea)}</span>
+      <button class="sugg-count" onclick="toggleWho(event,this)" aria-label="${g.people.length} suggested this: ${esc(names)}">(${g.people.length})</button>
+      <span class="sugg-who" role="tooltip">Suggested by ${esc(names)}</span></div>`;}).join('');
+}
+// Hover shows the names on desktop (CSS); tapping the count toggles them for touch screens.
+function closeWho(except){document.querySelectorAll('.sugg-row.open').forEach(r=>{if(r!==except)r.classList.remove('open');});}
+function toggleWho(ev,btn){ev.stopPropagation();const row=btn.closest('.sugg-row');closeWho(row);row.classList.toggle('open');}
+document.addEventListener('click',()=>closeWho());
+function accordion(id,title,count,inner){
+  const open=S.acc[id];
+  return`<section class="acc" id="acc-${id}"><button class="acc-head" aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev" aria-hidden="true">${open?'▾':'▸'}</span><span class="acc-title">${title} <span class="acc-count">(${count})</span></span></button>
+    <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}>${inner}</div></section>`;
+}
+// Animated with max-height. The toggle edits the DOM directly (a full render() would replace the element and cancel the transition).
+function toggleAcc(id){
+  const el=document.getElementById('acc-'+id),body=document.getElementById('acc-body-'+id);if(!el||!body)return;
+  const open=S.acc[id]=!S.acc[id];
+  el.querySelector('.acc-head').setAttribute('aria-expanded',open);el.querySelector('.acc-chev').textContent=open?'▾':'▸';
+  clearTimeout(body._t);closeWho();
+  if(open){
+    body.removeAttribute('inert');body.style.maxHeight=body.scrollHeight+'px';
+    body._t=setTimeout(()=>{body.style.maxHeight='none';body.classList.add('settled');},320);   // after the animation: let content grow freely
+  }else{
+    body.classList.remove('settled');body.style.maxHeight=body.scrollHeight+'px';body.offsetHeight;   // pin the height, then animate to 0
+    body.style.maxHeight='0';body.setAttribute('inert','');
+  }
+}
+
 function renderVoices(m){
   if(!sb){setupNeeded(m);return;}
-  const allReal=S.submissions.filter(s=>!s.isTest),allTest=S.submissions.filter(s=>s.isTest);
-  const subs=filteredSubs(),myCount=allReal.filter(s=>s.mine).length;
+  const allReal=S.submissions.filter(s=>!s.isTest);
+  const subs=filteredSubs();
+  // Counts follow the active filters: tests only count while "Show tests" is on, and the header also follows "Mine only".
+  const visible=S.showTests?S.submissions:allReal;
+  const myCount=visible.filter(s=>s.mine).length;
+  const scope=S.showMine?visible.filter(s=>s.mine):visible;
+  const nReal=scope.filter(s=>!s.isTest).length,nTest=scope.length-nReal;
+  const sugKey=S.submissions.length;
+  if(S.loaded&&S.suggestedKey!==sugKey&&S.suggestedState!=='loading')fetchSuggested(sugKey);
+  const groups=suggestedGroups();
   if(!S.submissions.length){m.innerHTML=`<h2>Voices</h2>
     <div class="preview-block"><div class="preview-title">📊 Pillar coverage chart</div><p>A bar chart showing how many submissions touch each pillar — where the energy flows and which areas need more voices.</p></div>
     <div class="preview-block"><div class="preview-title">📝 Summaries</div><p>Each voice appears as a card with its tagged pillars and an AI-generated summary of the contributor's position — not the raw text. Your own submissions show the full text to you only.</p></div>
@@ -252,11 +314,13 @@ function renderVoices(m){
       <div class="submission-pills">${pills}</div>
       <div class="submission-text"><span class="summary-text">${esc(displayText)}</span></div>${rawBlock}</div>`;
   }).join('');
-  m.innerHTML=`<h2>All Voices <span style="color:var(--accent)">(${allReal.length}${allTest.length?' + '+allTest.length+' test':''})</span></h2>
+  m.innerHTML=`<h2>All Voices <span style="color:var(--accent)">(${nReal}${nTest?' + '+nTest+' test':''})</span></h2>
   <div class="filter-bar">
-    <div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}" style="${S.showTests?'background:var(--muted)':''}"></div><span>Show tests</span></div>
+    <div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}"></div><span>Show tests</span></div>
     <div class="toggle-row" onclick="S.showMine=!S.showMine;render()"><div class="toggle toggle-sm ${S.showMine?'on':''}"></div><span>Mine only (${myCount})</span></div>
-  </div>${S.persona?`<p style="font-size:12px;color:var(--muted);margin:-8px 0 16px">Viewing as <strong>${esc(PERSONAS[S.persona].label)}</strong> — change on the Submit tab.</p>`:''}<div class="card">${bars}</div><h3 style="margin-bottom:16px">Submissions (${subs.length})</h3>${cards}`;
+  </div>${S.persona?`<p style="font-size:12px;color:var(--muted);margin:-8px 0 16px">Viewing as <strong>${esc(PERSONAS[S.persona].label)}</strong> — change on the Submit tab.</p>`:''}<div class="card">${bars}</div>
+  ${accordion('submissions','Submissions',subs.length,cards||'<p class="acc-empty">No submissions match these filters.</p>')}
+  ${accordion('suggested','Suggested Pillars',groups.length,renderSuggested(groups))}`;
 }
 
 function renderSynthesis(m){

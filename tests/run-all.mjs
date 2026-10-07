@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { HERE } from './lib.mjs';
 
-const browser = ['app.e2e.mjs', 'delete.e2e.mjs', 'mark-test.e2e.mjs', 'persona.e2e.mjs', 'files.e2e.mjs', 'wizard.e2e.mjs'];
+const browser = ['app.e2e.mjs', 'delete.e2e.mjs', 'mark-test.e2e.mjs', 'persona.e2e.mjs', 'files.e2e.mjs', 'wizard.e2e.mjs', 'voices.e2e.mjs'];
 const plain = ['gate.test.mjs', 'google-doc.test.mjs', 'email-hook.test.mjs', 'sql-auth.test.mjs', 'sql-delete.test.mjs', 'sql-mark-test.test.mjs', 'sql-seed.test.mjs', 'sql-wizard.test.mjs'];
 const only = process.argv[2]; // optional: run a single suite, e.g. `npm test -- persona`
 

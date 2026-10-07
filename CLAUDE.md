@@ -42,6 +42,12 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - Pillars, Voices and Synthesis lock via `isLocked()` / `hasContributed()`, derived from `S.submissions` (`mine && !isTest`), so no extra query and it unlocks right after a submit. `S.isOwner` (project lead) bypasses. Locked tabs are `aria-disabled`, still clickable (toast); Playwright needs `{force:true}` to click them.
 - Privacy copy deliberately says "Your email stays private", not the brief's "We store nothing / zero personal data" (the email is kept in Supabase Auth, optional display name and raw text are stored).
 
+## Voices tab: counts, accordions, suggested pillars (uncommitted)
+- Header and "Mine only" counts follow the filters: tests only count while "Show tests" is on; the header also follows "Mine only". "Show tests" uses the normal accent when on.
+- Submissions and Suggested Pillars are accordions (`accordion()` / `toggleAcc()` in `public/app.js`, state `S.acc`). `toggleAcc` edits the DOM directly so the max-height animation isn't cancelled by `render()`.
+- Suggested Pillars come from `GET /api/suggested-pillars` (service-role read, no SQL change): `ai_mapping.newIdeas` of discovery inputs that belong to a saved submission, grouped by case/punctuation-insensitive match, one entry per person, "Anonymous" unless they chose a name. Only idea text + display names leave the server. Different wordings of one theme do NOT merge (real model output is unverified).
+- `api/map-pillars.js` now asks for new ideas as 2-5 word pillar-style names. "Mine only" does not filter suggestions (the server doesn't know who is asking).
+
 ## Where we left off (2026-10-06)
 The verified-participant cutover is complete. The owner ran the full `supabase-setup.sql`; commit `adcfce8` was pushed to `main`; Vercel deployed it successfully; and the production alias is live. Post-deploy probes confirmed the crew gate returns `401` for the site, config, and every API without its cookie; the new submission RPC and synthesis column exist; and direct anonymous reads of private participant/submission tables are denied. Supabase Auth's project email quota was raised to 60/hour after the previous two-email/hour quota blocked testing; keep the per-user resend cooldown at 60 seconds.
 
