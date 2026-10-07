@@ -37,9 +37,9 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - Typing does not redraw; gated fields call `wzLiveGate()` to enable/disable Next. Never paste a stored path/URL into an `onclick` string; look it up by submission id (`wzOpenStored`).
 - Voice transcription is the browser's `SpeechRecognition` (editable transcript); real transcription, real Storage and real model output for the new prompts are **unverified**: the tests use fakes.
 
-## Landing page + tab locking (built 2026-10-07, not committed yet)
+## Landing page + tab locking (landing page pushed in `e690f9a`; Voices lock added after, uncommitted)
 - Home (`renderHome` in `public/app.js`) is a landing page; counts come from `GET /api/metrics` (`api/metrics.js`, service-role key, three integers only, no SQL change). Cached in `S.metrics`, re-fetched only when the number of visible real submissions changes; if it fails the counts section is hidden. The third number is **Contributions** (the brief's "areas of consensus" would be 0/stale until the lead runs synthesis).
-- Pillars and Synthesis lock via `isLocked()` / `hasContributed()`, derived from `S.submissions` (`mine && !isTest`), so no extra query and it unlocks right after a submit. `S.isOwner` (project lead) bypasses. Locked tabs are `aria-disabled`, still clickable (toast); Playwright needs `{force:true}` to click them.
+- Pillars, Voices and Synthesis lock via `isLocked()` / `hasContributed()`, derived from `S.submissions` (`mine && !isTest`), so no extra query and it unlocks right after a submit. `S.isOwner` (project lead) bypasses. Locked tabs are `aria-disabled`, still clickable (toast); Playwright needs `{force:true}` to click them.
 - Privacy copy deliberately says "Your email stays private", not the brief's "We store nothing / zero personal data" (the email is kept in Supabase Auth, optional display name and raw text are stored).
 
 ## Where we left off (2026-10-06)

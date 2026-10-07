@@ -22,8 +22,8 @@ check('accept deletes one card', true);
 check('toast shown', await p.locator('.toast:has-text("deleted")').isVisible());
 check('heading count updates to (1)', (await p.locator('h2').first().innerText()).includes('(1)'));
 // another visitor: sees remaining card, no Delete button, and a forged delete fails
-const p2 = await (await b.newContext()).newPage(); await p2.goto(B); await p2.click('nav button:has-text("Voices")'); await p2.waitForSelector('.submission-card');
-check("other visitor sees the card but no Delete", (await p2.locator('button:has-text("Delete")').count()) === 0);
+const p2 = await (await b.newContext()).newPage(); await p2.goto(B); await p2.waitForSelector('.hero-cta');
+check("other visitor is locked out of Voices, so there is no Delete button to press", (await p2.locator('nav button.locked:has-text("Voices")').count()) === 1 && (await p2.locator('button:has-text("Delete")').count()) === 0);
 const id = (await (await fetch(B + '/__db')).json()).submissions[0].id;
 const forged = await p2.evaluate(async ([id]) => (await sb.rpc('delete_my_submission', { p_id: id, p_test_uid: 'someone-elses-uid' })).data, [id]);
 check('forged delete by other visitor returns false', forged === false);

@@ -30,11 +30,13 @@ check('no horizontal scroll at phone width', await page.evaluate(() => document.
 await page.screenshot({ path: SHOTS + 'screens/shot-home.png', fullPage: true });
 
 // Locked tabs for someone with no contribution yet
-check('Pillars and Synthesis show locked (dimmed, lock icon); Voices and Submit do not',
-  (await page.locator('nav button.locked').count()) === 2 && (await page.locator('nav button.locked .ti-lock').count()) === 2 &&
-  (await page.locator('nav button.locked').allInnerTexts()).join().includes('Pillars') && (await page.locator('nav button.locked').first().evaluate((e) => getComputedStyle(e).opacity)) === '0.45');
+check('Pillars, Voices and Synthesis show locked (dimmed, lock icon); Home and Submit do not',
+  (await page.locator('nav button.locked').count()) === 3 && (await page.locator('nav button.locked .ti-lock').count()) === 3 &&
+  (await page.locator('nav button.locked').allInnerTexts()).join().includes('Voices') && !(await page.locator('nav button:has-text("Submit")').getAttribute('class')).includes('locked') && (await page.locator('nav button.locked').first().evaluate((e) => getComputedStyle(e).opacity)) === '0.45');
 await page.click('nav button:has-text("Pillars")', { force: true });   // aria-disabled, but still clickable for a real person
 check('locked Pillars: gentle toast, stays on Home', (await page.locator('.toast').innerText()) === 'Share your voice first, then explore the pillars' && await page.locator('.hero-cta').isVisible());
+await page.click('nav button:has-text("Voices")', { force: true });
+check('locked Voices: its own toast, stays on Home', (await page.locator('.toast').innerText()) === 'Share your voice first to see what others have shared' && await page.locator('.hero-cta').isVisible());
 await page.click('nav button:has-text("Synthesis")', { force: true });
 check('locked Synthesis: its own toast, no stacked toasts, stays on Home', (await page.locator('.toast').count()) === 1 && (await page.locator('.toast').innerText()) === 'Share your voice first to unlock this' && await page.locator('.hero-cta').isVisible());
 await page.click('.hero-cta');
@@ -102,12 +104,14 @@ check('own raw text expands', (await page.locator('.raw-content.show').innerText
 // Privacy: a second browser profile must not see raw text / "yours"
 const ctx2 = await browser.newContext({ viewport: { width: 420, height: 900 } });
 const p2 = await ctx2.newPage();
-await p2.goto(B); await p2.click('nav button:has-text("Voices")'); await p2.waitForSelector('.submission-card');
-check('other user with no submission of their own is still locked out of Pillars/Synthesis', (await p2.locator('nav button.locked').count()) === 2);
-check('other user: no raw toggle, no yours badge', (await p2.locator('.raw-toggle').count()) === 0 && (await p2.locator('.mine-badge').count()) === 0);
-check('other user: sees summary', (await p2.locator('.summary-text').first().innerText()) === 'A short summary.');
-const html2 = await p2.content();
-check('other user: raw text not anywhere in DOM', !html2.includes('disclose itself on playa'));
+await p2.goto(B); await p2.waitForSelector('.hero-cta');
+check('other user with no submission of their own is locked out of Pillars/Voices/Synthesis', (await p2.locator('nav button.locked').count()) === 3);
+await p2.click('nav button:has-text("Voices")', { force: true });
+check('locked Voices does not navigate for the other user', await p2.locator('.hero-cta').isVisible() && (await p2.locator('.submission-card').count()) === 0);
+// the lock is a courtesy; the real privacy boundary is the server, so check what the database hands another browser
+const rows2 = await p2.evaluate(async () => (await sb.rpc('list_submissions', {})).data);
+check('other user (server level): sees the summary but never raw text, "yours" or owner-only fields', rows2.length === 1 && rows2[0].summary === 'A short summary.' && rows2[0].mine === false && rows2[0].content === null && rows2[0].file_url === null);
+check('other user: raw text not anywhere in DOM', !(await p2.content()).includes('disclose itself on playa'));
 await p2.close(); await ctx2.close();
 
 // Mine-only + show tests filters
@@ -166,8 +170,8 @@ check('dark mode bg is #0d0b14', (await page.evaluate(() => getComputedStyle(doc
 // Explicit sign-out removes private ownership access on this browser.
 await page.click('nav button:has-text("Submit")');await page.click('button:has-text("Sign out / switch")');await page.waitForSelector('.verify-card');
 check('sign out returns to participant verification', await page.locator('.verify-card').isVisible());
-await page.click('nav button:has-text("Voices")');
-check('signed-out browser no longer sees private raw controls', (await page.locator('button:has-text("Show your full submission")').count())===0);
+check('after sign-out the tabs lock again', (await page.locator('nav button.locked').count()) === 3);
+check('signed-out browser no longer receives private raw text', (await page.evaluate(() => S.submissions.every((x) => x.content === null && !x.mine))));
 
 check('no console/page errors', errors.length === 0, errors.join(' | '));
 console.log(`\n${results.filter(Boolean).length}/${results.length} passed`);

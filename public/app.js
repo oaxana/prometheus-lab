@@ -121,8 +121,8 @@ async function editDisplayName(){
   try{await saveParticipantName(name);await refresh();render();showToast('Display name saved');}
   catch(e){alert('Error: '+(e.message||'could not save name'));}
 }
-// ---------- tab locking: Pillars and Synthesis open after the participant's first real (non-test) contribution ----------
-const LOCKED_TABS={pillars:'Share your voice first, then explore the pillars',synthesis:'Share your voice first to unlock this'};
+// ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
+const LOCKED_TABS={pillars:'Share your voice first, then explore the pillars',voices:'Share your voice first to see what others have shared',synthesis:'Share your voice first to unlock this'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
 // The project lead is never locked out (they run synthesis), and nothing is treated as unlocked until the list has loaded.
 function hasContributed(){return !!S.session&&S.submissions.some(s=>s.mine&&!s.isTest);}
