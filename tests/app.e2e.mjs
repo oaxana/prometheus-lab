@@ -17,16 +17,33 @@ page.on('dialog', async (d) => { dialogs.push(d.message()); if (d.type() === 'pr
 
 await page.goto(B);
 await page.waitForSelector('.stat-num');
-check('home renders 3 stats', (await page.locator('.stat').count()) === 3);
-check('home shows 0 voices', (await page.locator('.stat-num').first().innerText()) === '0');
+await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent !== '—');
+check('home renders 3 live stats', (await page.locator('.stat').count()) === 3);
+check('home shows 0 voices / 0 of 12 pillars / 0 contributions', (await page.locator('.stat-num').allInnerTexts()).join('|') === '0|0/12|0');
+check('home has hero headline, CTA, trust line, 3 step cards, context + trust blocks, footer',
+  (await page.locator('h1').innerText()).includes('humans and AI') && await page.locator('.hero-cta:has-text("Add your voice")').isVisible() &&
+  await page.locator('.hero-trust:has-text("Anonymous by default")').isVisible() && (await page.locator('.step-card').count()) === 3 &&
+  await page.locator('h2:has-text("What\'s a constitution here?")').isVisible() && await page.locator('h2:has-text("Built on trust")').isVisible() &&
+  await page.locator('.home-footer:has-text("AI-cautious voices both welcome")').isVisible());
 check('legacy browser uid is no longer created', (await page.evaluate(() => localStorage.getItem('prometheus-lab-uid'))) === null);
-await page.screenshot({ path: SHOTS + 'screens/shot-home.png' });
+check('no horizontal scroll at phone width', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+await page.screenshot({ path: SHOTS + 'screens/shot-home.png', fullPage: true });
 
-// Pillars tab
-await page.click('nav button:has-text("Pillars")');
-await page.click('button:has-text("Expand all")');
-check('pillars expand all', (await page.locator('.pillar-ref-body.open').count()) === 12);
-await page.screenshot({ path: SHOTS + 'screens/shot-pillars.png', fullPage: false });
+// Locked tabs for someone with no contribution yet
+check('Pillars and Synthesis show locked (dimmed, lock icon); Voices and Submit do not',
+  (await page.locator('nav button.locked').count()) === 2 && (await page.locator('nav button.locked .ti-lock').count()) === 2 &&
+  (await page.locator('nav button.locked').allInnerTexts()).join().includes('Pillars') && (await page.locator('nav button.locked').first().evaluate((e) => getComputedStyle(e).opacity)) === '0.45');
+await page.click('nav button:has-text("Pillars")', { force: true });   // aria-disabled, but still clickable for a real person
+check('locked Pillars: gentle toast, stays on Home', (await page.locator('.toast').innerText()) === 'Share your voice first, then explore the pillars' && await page.locator('.hero-cta').isVisible());
+await page.click('nav button:has-text("Synthesis")', { force: true });
+check('locked Synthesis: its own toast, no stacked toasts, stays on Home', (await page.locator('.toast').count()) === 1 && (await page.locator('.toast').innerText()) === 'Share your voice first to unlock this' && await page.locator('.hero-cta').isVisible());
+await page.click('.hero-cta');
+check('"Add your voice" opens the Submit tab', await page.locator('.verify-card').isVisible());
+await page.click('nav button:has-text("Home")'); await page.click('.step-card.clickable');
+check('step 1 card ("Share") opens the Submit tab', await page.locator('.verify-card').isVisible());
+await page.click('nav button:has-text("Home")');
+await page.click('.step-card >> nth=1');
+check('step 2 and 3 cards are not links', await page.locator('.hero-cta').isVisible());
 
 // Submit tab: typed text must survive toggling anonymous + a background refresh
 await page.click('nav button:has-text("Submit")');
@@ -56,7 +73,16 @@ check('display name survives + quotes escaped', (await page.inputValue('#display
 await page.screenshot({ path: SHOTS + 'screens/shot-submit.png', fullPage: true });
 await runWizard(page, { text: 'AI should always disclose itself on playa.', choice: 'not_sure', resume: true });   // step 1 was set up by hand above
 check('lands on the confirmation step', await page.locator('h2:has-text("Your voice is in the lab now")').isVisible());
+check('tabs unlock right after the first submission, without a reload', (await page.locator('nav button.locked').count()) === 0 && (await page.locator('nav button .ti-lock').count()) === 0);
 check('history lists the new submission with its summary', (await page.locator('.wz-hrow .wz-hsum').first().innerText()) === 'A short summary.');
+await page.click('nav button:has-text("Pillars")');
+await page.click('button:has-text("Expand all")');
+check('pillars expand all', (await page.locator('.pillar-ref-body.open').count()) === 12);
+await page.screenshot({ path: SHOTS + 'screens/shot-pillars.png', fullPage: false });
+await page.click('nav button:has-text("Home")');
+await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent === '1');
+const realRows = (await (await fetch(B + '/__db')).json()).submissions.filter((r) => !r.is_test);
+check('home counts refresh after a submission (1 voice, pillars covered, 1 contribution)', (await page.locator('.stat-num').allInnerTexts()).join('|') === `1|${new Set(realRows.flatMap((r) => r.pillars)).size}/12|1`);
 await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card');
 check('card shows AI summary, not raw text', (await page.locator('.summary-text').first().innerText()) === 'A short summary.');
 check('auto-tagged badge + pillar pills (1 and 3)', (await page.locator('.pill.auto').count()) === 2);
@@ -77,6 +103,7 @@ check('own raw text expands', (await page.locator('.raw-content.show').innerText
 const ctx2 = await browser.newContext({ viewport: { width: 420, height: 900 } });
 const p2 = await ctx2.newPage();
 await p2.goto(B); await p2.click('nav button:has-text("Voices")'); await p2.waitForSelector('.submission-card');
+check('other user with no submission of their own is still locked out of Pillars/Synthesis', (await p2.locator('nav button.locked').count()) === 2);
 check('other user: no raw toggle, no yours badge', (await p2.locator('.raw-toggle').count()) === 0 && (await p2.locator('.mine-badge').count()) === 0);
 check('other user: sees summary', (await p2.locator('.summary-text').first().innerText()) === 'A short summary.');
 const html2 = await p2.content();
@@ -94,6 +121,17 @@ await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.
 await page.click('.toggle-row:has-text("Show tests")');
 check('test card appears when "Show tests" on', (await page.locator('.test-card').count()) === 1);
 check('user-selected pillar kept & not auto-tagged', (await page.locator('.test-card .pill').count()) === 1 && (await page.locator('.test-card .pill.auto').count()) === 0);
+
+const m = await (await fetch(B + '/api/metrics')).json();
+check('metrics API leaves out test rows and exposes only three counts', JSON.stringify(Object.keys(m).sort()) === '["contributions","pillarsCovered","voices"]' && m.contributions === 1 && m.voices === 1);
+check('metrics API is GET-only', (await fetch(B + '/api/metrics', { method: 'POST' })).status === 405);
+
+// Home when the metrics service is down: section hides, rest of the page still works (separate page: the 500 is an expected console error)
+await fetch(B + '/__metrics?m=fail');
+const dctx = await browser.newContext({ viewport: { width: 375, height: 800 } }); const dp = await dctx.newPage();
+await dp.goto(B); await dp.waitForSelector('.hero-cta'); await dp.waitForTimeout(800);
+check('metrics failure hides the numbers gracefully', (await dp.locator('.home-stats').count()) === 0 && (await dp.locator('.step-card').count()) === 3);
+await dctx.close(); await fetch(B + '/__metrics?m=ok');
 
 // Synthesis: locked first
 await page.click('nav button:has-text("Synthesis")');

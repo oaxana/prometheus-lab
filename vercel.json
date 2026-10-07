@@ -7,6 +7,7 @@
     "api/summarize.js": { "maxDuration": 30 },
     "api/map-pillars.js": { "maxDuration": 30 },
     "api/google-doc.js": { "maxDuration": 30 },
+    "api/metrics.js": { "maxDuration": 10 },
     "api/test-persona-submit.js": { "maxDuration": 10 },
     "api/synthesize.js": { "maxDuration": 60 }
   },

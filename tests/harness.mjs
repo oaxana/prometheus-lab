@@ -17,6 +17,7 @@ const synthesize = (await import(`${ROOT}/api/synthesize.js`)).default;
 const googleDoc = (await import(`${ROOT}/api/google-doc.js`)).default;
 const mapPillars = (await import(`${ROOT}/api/map-pillars.js`)).default;
 const testPersonaSubmit = (await import(`${ROOT}/api/test-persona-submit.js`)).default;
+const metrics = (await import(`${ROOT}/api/metrics.js`)).default;
 // Fake Google: only the google hosts are intercepted; everything else (Anthropic fake, Supabase fake) goes to the real fetch.
 const realFetch = globalThis.fetch;
 const gText = (body, h = {}) => new Response(body, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', ...h } });
@@ -37,6 +38,7 @@ globalThis.fetch = async (u, o) => {
 
 const db = { submissions: [], discovery: [], objects: [], synthesis: null, participants: new Map(), authUsers: new Map(), refreshTokens: new Map() };
 let mapMode = 'ok'; // 'ok' | 'fail'
+let metricsMode = 'ok'; // 'ok' | 'fail'
 export const log = [];
 let anthropicMode = 'ok'; // 'ok' | 'reject-attachments' | 'refusal'
 
@@ -278,10 +280,15 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__log') return json(res, 200, log);
     if (url.pathname === '/__db') return json(res, 200, db);
     if (url.pathname.startsWith('/anthropic/')) return fakeAnthropic(req, res, await readBody(req));
+    if (url.pathname === '/__metrics') { metricsMode = url.searchParams.get('m'); return json(res, 200, { metricsMode }); }
     if (url.pathname === '/__map') { mapMode = url.searchParams.get('m'); return json(res, 200, { mapMode }); }
     if (url.pathname.startsWith('/supabase/storage/v1/')) return fakeStorage(req, res, url);
     if (url.pathname.startsWith('/supabase/auth/v1/')) return fakeAuth(req, res, url, await readBody(req));
     if (url.pathname.startsWith('/supabase/')) return fakeSupabase(req, res, url, await readBody(req));
+    if (url.pathname === '/api/metrics') {
+      if (metricsMode === 'fail') return json(res, 500, { error: 'down' });
+      return metrics(req, vercelRes(res));
+    }
     if (url.pathname === '/api/summarize' || url.pathname === '/api/map-pillars' || url.pathname === '/api/synthesize' || url.pathname === '/api/google-doc' || url.pathname === '/api/test-persona-submit') {
       const raw = await readBody(req);
       req.body = raw ? JSON.parse(raw) : undefined;

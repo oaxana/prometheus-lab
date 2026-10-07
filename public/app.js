@@ -8,7 +8,8 @@ let S={view:'home',submissions:[],synthesis:null,isOwner:false,
   synthesizing:false,displayName:'',
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
   loaded:false,persona:0,authReady:false,session:null,participantName:'',
-  authEmail:'',otpSent:false,authBusy:false,authError:''};   // the Submit tab's wizard state lives in W (wizard.js)
+  authEmail:'',otpSent:false,authBusy:false,authError:'',
+  metrics:null,metricsState:'',metricsKey:-1};   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
 let sb=null,adminKey='';
 
 // ---------- Supabase participant session + admin key ----------
@@ -120,7 +121,14 @@ async function editDisplayName(){
   try{await saveParticipantName(name);await refresh();render();showToast('Display name saved');}
   catch(e){alert('Error: '+(e.message||'could not save name'));}
 }
+// ---------- tab locking: Pillars and Synthesis open after the participant's first real (non-test) contribution ----------
+const LOCKED_TABS={pillars:'Share your voice first, then explore the pillars',synthesis:'Share your voice first to unlock this'};
+// Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
+// The project lead is never locked out (they run synthesis), and nothing is treated as unlocked until the list has loaded.
+function hasContributed(){return !!S.session&&S.submissions.some(s=>s.mine&&!s.isTest);}
+function isLocked(v){return !!LOCKED_TABS[v]&&!S.isOwner&&!hasContributed();}
 function nav(v){
+  if(isLocked(v)){document.querySelector('.toast')?.remove();showToast(LOCKED_TABS[v]);return;}
   if(v!=='submit')wzStopAllRec();                 // a recording never keeps running behind another tab
   if(v==='submit'&&W.step===8)wzReset();          // coming back after a submission starts a fresh one
   S.view=v;render();window.scrollTo(0,0)}
@@ -131,25 +139,53 @@ function render(){
   // Keep whatever is typed in the form across re-renders.
   const n=document.getElementById('display-name');if(n)S.displayName=n.value;
   wzSyncFields();
+  if(isLocked(S.view)&&S.loaded)S.view='home';   // e.g. the only real submission was deleted or marked as test while on this tab
   const fk=document.activeElement?.dataset?.fk;   // keyboard users keep their place after a redraw
   document.getElementById('nav').innerHTML=[
     {id:'home',label:'Home',icon:'🔥'},{id:'pillars',label:'Pillars',icon:'📋'},
     {id:'submit',label:'Submit',icon:'✍️'},{id:'voices',label:'Voices',icon:'👁'},
     {id:'synthesis',label:'Synthesis',icon:'⚡'}
-  ].map(t=>`<button class="${S.view===t.id?'active':''}" onclick="nav('${t.id}')">${t.icon} ${t.label}</button>`).join('');
+  ].map(t=>{const lk=isLocked(t.id);
+    return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-disabled="true" aria-label="${t.label} (locked: ${LOCKED_TABS[t.id]})"`:''} onclick="nav('${t.id}')">${t.icon} ${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</button>`;}).join('');
   const m=document.getElementById('main');
   ({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis})[S.view]?.(m);
   if(S.view==='submit')wzAfterRender();
   if(fk)document.querySelector(`#main [data-fk="${fk}"]`)?.focus({preventScroll:true});
 }
 
+// Home counts come from /api/metrics. They are cached for the session and re-fetched only when the number of
+// real contributions we can already see changes (the 20 s poll updates that), so the numbers stay roughly live.
+async function fetchMetrics(key){
+  S.metricsKey=key;S.metricsState='loading';
+  try{
+    const r=await fetch('/api/metrics');
+    let d={};try{d=await r.json();}catch(e){}
+    if(r.status===401&&d.code==='crew_login'){location.reload();return;}
+    if(!r.ok||![d.voices,d.pillarsCovered,d.contributions].every(Number.isInteger))throw new Error('metrics '+r.status);
+    S.metrics=d;S.metricsState='ok';
+  }catch(e){console.error(e);S.metricsState='failed';}
+  if(S.view==='home')render();
+}
 function renderHome(m){
-  const real=S.submissions.filter(s=>!s.isTest),c=real.length,p=new Set(real.flatMap(s=>s.pillars||[])).size;
-  const my=real.filter(s=>s.mine).length;
-  m.innerHTML=`<div style="text-align:center;padding-top:20px"><span class="hero-flame">🔥</span><h1>Prometheus Lab</h1><p class="subtitle">Burning Man AI Constitution — Collective Voice</p></div>
-  <div class="card"><p style="font-size:15px;margin-bottom:12px">We're building a constitution that guides how humans and AI behave together — on playa and beyond.</p><p style="font-size:14px;color:var(--muted)">Write what you believe. Upload a doc. AI figures out which pillars your thoughts touch.</p></div>
-  <div class="stat-row"><div class="stat"><div class="stat-num">${c}</div><div class="stat-label">voices heard</div></div><div class="stat"><div class="stat-num">${p}</div><div class="stat-label">of 12 pillars</div></div><div class="stat"><div class="stat-num">${my}</div><div class="stat-label">yours</div></div></div>
-  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="btn btn-primary" onclick="nav('submit')">Add your voice</button><button class="btn btn-secondary" onclick="nav('pillars')">View pillars</button></div>`;
+  const key=S.submissions.filter(s=>!s.isTest).length;
+  if(S.loaded&&S.metricsKey!==key&&S.metricsState!=='loading')fetchMetrics(key);
+  const mt=S.metrics,num=v=>mt?String(v):'—';
+  const stats=S.metricsState==='failed'&&!mt?'':`<div class="stat-row home-stats" aria-label="Live counts"><div class="stat"><div class="stat-num">${num(mt?.voices)}</div><div class="stat-label">Voices heard</div></div><div class="stat"><div class="stat-num">${mt?mt.pillarsCovered+'/12':'—'}</div><div class="stat-label">Pillars covered</div></div><div class="stat"><div class="stat-num">${num(mt?.contributions)}</div><div class="stat-label">Contributions</div></div></div>`;
+  const step=(n,title,text,go)=>{const inner=`<span class="step-num">${n}</span><span class="step-title">${title}</span><span class="step-text">${text}</span>`;
+    return go?`<button class="step-card clickable" onclick="nav('submit')">${inner}</button>`:`<div class="step-card">${inner}</div>`;};
+  m.innerHTML=`<section class="hero">
+    <p class="hero-eyebrow">Prometheus Lab</p>
+    <h1>Help shape how <span class="hl">humans and AI</span> live together</h1>
+    <p class="hero-sub">We're writing a constitution for the playa — and beyond. Your perspective matters. Two minutes. Submit as many times as you like.</p>
+    <button class="btn btn-amber hero-cta" onclick="nav('submit')"><i class="ti ti-flame" aria-hidden="true"></i> Add your voice</button>
+    <div class="hero-trust"><span><i class="ti ti-eye-off" aria-hidden="true"></i> Anonymous by default</span><span><i class="ti ti-shield-check" aria-hidden="true"></i> Your email stays private</span></div>
+  </section>
+  ${stats}
+  <div class="section-divider"><span>How it works</span></div>
+  <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe',true)}${step(2,'Map','AI connects your ideas to 12 constitutional pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps')}</div>
+  <div class="card info-card"><h2 class="info-q">What's a constitution here?</h2><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
+  <div class="card info-card trust-card"><i class="ti ti-shield-lock trust-icon" aria-hidden="true"></i><div><h2 class="info-q">Built on trust</h2><p>Your email is used only to make sure each voice counts once, and it is never shown to anyone or sent to the AI. Even anonymous submissions are tied to a real person, so every perspective carries equal weight. Your raw words stay private to you. Only AI-generated summaries are shared with the group.</p></div></div>
+  <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>`;
 }
 
 function renderPillars(m){

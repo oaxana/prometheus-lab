@@ -31,7 +31,7 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 
 **For everyone on the crew**
 - **Password gate** on the landing page; nothing is reachable without it.
-- **Five tabs:** Home, Pillars, Submit, Voices, Synthesis.
+- **Five tabs:** Home (landing page with live counts), Pillars, Submit, Voices, Synthesis. Pillars and Synthesis stay locked (dimmed, lock icon, gentle message) until the signed-in participant has one non-test contribution; the project lead is never locked out.
 - **Pillars:** the 12 constitutional pillars with expandable sub-topics.
 - **Submit** through an eight-step wizard (see below): settings → blank-slate topics → AI pillar mapping → format → the contribution → label → review → confirmation + your history. A contribution can be **typed**, **recorded** (voice note, transcribed in the browser; the recording is kept), or **uploaded**: `.pdf` (scanned PDFs are read by Claude), `.doc`/`.docx`, `.ppt`/`.pptx` (slide text in deck order plus speaker notes), images (`.png`/`.jpg`/`.gif`, read by Claude vision), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view"). Old binary `.doc`/`.ppt` files are stored but cannot be read in the browser, so the wizard asks for a short note instead.
 - **Pillars:** the wizard asks first what matters to *you* (before showing the draft pillars, to avoid anchoring), then Claude maps that answer onto the draft pillars and flags ideas that fit none. You can pick several pillars, "Not sure yet" (Claude picks), or "Something else entirely".
@@ -235,6 +235,7 @@ All of them require the crew cookie (otherwise `401 {code:"crew_login"}`).
 
 | Endpoint | Body | Returns |
 |---|---|---|
+| `GET /api/metrics` | none | `{ voices, pillarsCovered, contributions }`: real (non-test) rows only; voices counted by participant id (old rows by browser uid). Uses the server-side key; behind the crew gate like every `/api/*`. Reads up to 1,000 rows |
 | `POST /api/map-pillars` | `{ text }` | `{ matched: number[], newIdeas: string[], reasoning }`. Ids are validated against the pillar list; text capped at 8,000 chars. The browser falls back to the plain pillar grid if this fails |
 | `POST /api/summarize` | `{ text, selectedPillars?, noTag?, contributionType?, attachments?: [{name, mediaType, data(base64)}] }` | `{ pillars, summary, autoTagged, attachmentsSkipped? }`. Text capped at 8,000 chars; ≤4 attachments, 3 MB total; images/PDFs only |
 | `POST /api/synthesize` | `{ includeTests? }` + header `x-admin-key` | The synthesis (also stored). Reads up to 1,000 submissions, 6,000 chars each |

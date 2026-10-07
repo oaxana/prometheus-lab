@@ -192,3 +192,29 @@ input[type="text"]:focus,input[type="email"]:focus{border-color:var(--accent)}in
 .wz-hactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.wz-hactions .btn-ghost{padding:6px 10px;border:1px solid var(--border);color:var(--text)}
 .wz-hrow .wz-nav{margin-top:14px}.wz-hrow input[type=text]{width:100%}
 .drop-zone .ti.icon{font-size:32px;color:var(--amber-text)}
+
+/* ---------- Home landing page (renderHome in public/app.js) ---------- */
+nav button.locked{opacity:.45}nav button.locked:hover{opacity:.7}nav button .ti-lock{font-size:12px;vertical-align:-1px}
+.hero{text-align:center;padding:20px 0 28px}
+.hero-eyebrow{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px}
+.hero h1{font-size:30px;line-height:1.2;max-width:480px;margin:0 auto 14px}.hero h1 .hl{color:var(--amber-text)}
+.hero-sub{max-width:420px;margin:0 auto 22px;font-size:15px;color:var(--muted)}
+.hero-cta{display:inline-flex;align-items:center;gap:8px;padding:13px 30px}.hero-cta .ti{font-size:18px}
+.hero-trust{display:flex;justify-content:center;gap:8px 20px;flex-wrap:wrap;margin-top:16px;font-size:12px;color:var(--muted)}
+.hero-trust .ti{font-size:14px;vertical-align:-2px;margin-right:2px}
+.home-stats .stat-num{color:var(--amber-text);font-variant-numeric:tabular-nums}
+.section-divider{display:flex;align-items:center;gap:12px;margin:8px 0 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
+.section-divider::before,.section-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.step-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:16px}
+@media(min-width:560px){.step-grid{grid-template-columns:repeat(3,1fr)}}
+.step-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-family:var(--font);transition:border-color .15s}
+.step-card:hover{border-color:var(--amber)}.step-card.clickable{cursor:pointer}
+.step-card:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.step-num{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--amber-dim);color:var(--amber-text);font-size:13px;font-weight:700}
+.step-title{font-size:15px;font-weight:600}.step-text{font-size:13px;color:var(--muted);line-height:1.45}
+.info-card .info-q{font-size:15px;margin-bottom:8px}.info-card p{font-size:14px;color:var(--muted)}
+.trust-card{display:flex;gap:14px;align-items:flex-start}.trust-icon{font-size:26px;color:var(--amber-text);flex-shrink:0;margin-top:1px}
+.home-footer{text-align:center;font-size:12px;color:var(--muted);line-height:1.6;margin-top:28px}
+/* five tabs (two with a lock icon) can be wider than a phone: scroll from the left edge instead of clipping "Home" */
+nav{justify-content:safe center;padding-left:8px;padding-right:8px}
+nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
