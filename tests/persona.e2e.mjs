@@ -59,30 +59,66 @@ await postService('/supabase/rest/v1/submissions', { pillars: [2], content: 'ano
 await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'anon thought two', summary: 's', auto_tagged: false, is_test: false, participant_id:stranger, uid: null, display_name: '' });
 await p.reload(); await nav('Synthesis');
 await p.click('.toggle-row:has-text("Include test submissions")');
-await p.click('button:has-text("Run synthesis")'); await p.waitForSelector('.tag-commons');
+await p.click('button:has-text("Run synthesis")'); await p.waitForSelector('.syn-sec');
 
-// rendering
-const items = p.locator('.card:has(.tag-contested) .syn-list li');
-check('contested: bullets, one per position', (await items.count()) === 2);
-check('contested: holders shown first', (await items.nth(0).locator('.who').innerText()) === 'Me' && (await items.nth(0).innerText()).includes('Strict opt-in') && (await items.nth(1).locator('.who').innerText()) === 'Persona 2, Persona 3' && (await items.nth(1).innerText()).includes('Signage + opt-out'));
-check('contested: core tension line', await p.locator('.tension:has-text("Core tension: Consent vs practicality")').isVisible());
-const cItems = p.locator('.card:has(.tag-commons) .syn-list.commons li');
-check('commons: one bullet per agreed point', (await cItems.count()) === 2);
-check('commons: strength badge', (await p.locator('.card:has(.tag-commons) .pill.auto').innerText()) === 'strong');
-const who0 = await cItems.nth(0).locator('.who').innerText();
-check('commons: named people + one distinct anonymous participant', who0 === 'Me, Persona 2, 1 anonymous', who0);
-check('commons: repeated anonymous submissions still count once', (await cItems.nth(1).locator('.who').innerText()) === 'Persona 2, 1 anonymous');
+// rendering: stats banner, then three levels that all start collapsed
+const settle = () => p.waitForTimeout(450);
+const stats = (await p.locator('.syn-stat').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+check('stats banner: voices, pillars covered, common ground, contested, gaps', stats.join('|') === '4 Voices heard|2/12 Pillars covered|1 Common ground|1 Contested|2 Gaps', stats.join('|'));
+check('three coloured section groups, all collapsed (level 1)', (await p.locator('.syn-sec').count()) === 3 && (await p.locator('.syn-shead[aria-expanded=true]').count()) === 0 && (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0);
+const secColor = (k) => p.locator(`#acc-syn-${k} .syn-tag`).evaluate((e) => getComputedStyle(e).color);
+check('section colours: green / amber / blue (dark theme)', (await secColor('commons')) === 'rgb(74, 186, 122)' && (await secColor('contested')) === 'rgb(232, 169, 72)' && (await secColor('gaps')) === 'rgb(107, 138, 237)');
+await p.click('#acc-syn-commons .syn-shead'); await settle();
+check('section opens to reveal pillar rows; the pillar detail is still collapsed (level 2)', (await p.locator('#acc-syn-commons .syn-pillar').count()) === 1 && (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'false' && (await p.locator('#acc-body-syn-commons-10').evaluate((e) => e.getBoundingClientRect().height)) === 0);
+check('chevron turns when opened', (await p.locator('#acc-syn-commons .syn-shead .rot').evaluate((e) => getComputedStyle(e).transform)) !== 'none');
+check('commons row: consensus bar 90% filled + pillar name + (3) participants pill', (await p.locator('#acc-syn-commons-10 .syn-meter i').evaluate((e) => e.style.width)) === '90%' && (await p.locator('#acc-syn-commons-10 .syn-pname').innerText()).includes('AI Presence, Identity & Immediacy') && (await p.locator('#acc-syn-commons-10 .sugg-count').innerText()) === '(3)');
+await p.locator('#acc-syn-commons-10 .sugg-count').click();
+check('tapping the pill lists participants: named + "Anonymous"', (await p.locator('#acc-syn-commons-10 .sugg-who').isVisible()) && (await p.locator('#acc-syn-commons-10 .sugg-who').innerText()) === 'Me, Persona 2, Anonymous');
+await p.mouse.click(5, 5);
+await p.click('#acc-syn-commons-10 .syn-phead'); await settle();
+const cItems = p.locator('#acc-syn-commons-10 .syn-pts li');
+check('detail (level 3): one bullet per agreed point with its holders', (await cItems.count()) === 2 && (await cItems.nth(0).innerText()).includes('— Me, Persona 2, 1 anonymous') && (await cItems.nth(1).innerText()).includes('— Persona 2, 1 anonymous'));
+check('detail: key themes, quote and nuance', (await p.locator('#acc-syn-commons-10 .syn-theme').allInnerTexts()).join('|') === 'Disclosure first|No deepfakes' && (await p.locator('#acc-syn-commons-10 .syn-quote').innerText()).includes('AI must say what it is') && (await p.locator('#acc-syn-commons-10 .syn-note').innerText()).includes('Agreement is <i>strongest</i>'));
 check('prose: ephemeral participant label scrubbed from text', (await cItems.nth(1).innerText()).includes('says a participant') && !(await cItems.nth(1).innerText()).includes('Participant D'));
+check('LLM html still escaped (points, quotes, nuance)', (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;') && (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;u&gt;Always&lt;/u&gt;') && (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;i&gt;strongest&lt;/i&gt;'));
+// contested: spectrum with positioned, named dots
+await p.click('#acc-syn-contested .syn-shead'); await settle(); await p.click('#acc-syn-contested-1 .syn-phead'); await settle();
+check('contested row: bar shows the biggest camp (2 of 3 = 67%), pill (3)', (await p.locator('#acc-syn-contested-1 .syn-meter i').evaluate((e) => e.style.width)) === '67%' && (await p.locator('#acc-syn-contested-1 .sugg-count').innerText()) === '(3)');
+check('spectrum: poles + one dot per participant', (await p.locator('#acc-syn-contested-1 .spec-poles span').allInnerTexts()).join('|') === 'Strict opt-in|Signage + opt-out' && (await p.locator('#acc-syn-contested-1 .dot').count()) === 3);
+const xs = await p.locator('#acc-syn-contested-1 .dot').evaluateAll((els) => els.map((e) => parseFloat(e.style.left)));
+check('spectrum: Me sits near the left pole, Persona 2 + 3 near the right', xs[0] < 20 && xs[1] > 70 && xs[2] > 70 && xs[1] !== xs[2], xs.join(','));
+const track = await p.locator('#acc-syn-contested-1 .spec-track').evaluate((e) => getComputedStyle(e).backgroundImage);
+check('spectrum track is a horizontal gradient', track.startsWith('linear-gradient(90deg') || track.includes('90deg'), track.slice(0, 40));
+await p.locator('#acc-syn-contested-1 .dot').first().hover();
+check('dot hover shows the participant name', (await p.locator('#acc-syn-contested-1 .dot').first().locator('.sugg-who').isVisible()) && (await p.locator('#acc-syn-contested-1 .dot').first().locator('.sugg-who').innerText()) === 'Me');
+await p.mouse.move(5, 5);
+await p.locator('#acc-syn-contested-1 .dot').nth(2).click();
+check('tapping a dot reveals its name too', (await p.locator('#acc-syn-contested-1 .dot').nth(2).locator('.sugg-who').innerText()) === 'Persona 3' && (await p.locator('.who-host.open').count()) === 1);
+await p.mouse.click(5, 5);
+const items = p.locator('#acc-syn-contested-1 .syn-pts li');
+check('contested positions listed with holders', (await items.count()) === 2 && (await items.nth(0).innerText()).includes('Strict opt-in') && (await items.nth(0).innerText()).includes('— Me') && (await items.nth(1).innerText()).includes('— Persona 2, Persona 3'));
+check('contested: core tension shown', (await p.locator('#acc-syn-contested-1 .syn-note').innerText()) === 'Consent vs practicality');
+// gaps: arrow bullets
+await p.click('#acc-syn-gaps .syn-shead'); await settle(); await p.click('#acc-syn-gaps-6 .syn-phead'); await p.click('#acc-syn-gaps-11 .syn-phead'); await settle();
+check('gaps: two simple rows (no bar, no participant pill)', (await p.locator('#acc-syn-gaps .syn-pillar').count()) === 2 && (await p.locator('#acc-syn-gaps .syn-meter, #acc-syn-gaps .sugg-count').count()) === 0);
+const arrows = await p.locator('#acc-syn-gaps-6 .syn-arrows li').allInnerTexts();
+check('gaps: arrow-prefixed suggestions, html escaped', arrows.length === 2 && (await p.locator('#acc-syn-gaps-6 .syn-arrows li').first().evaluate((e) => getComputedStyle(e, '::before').content)) === '"→"' && (await p.locator('#acc-syn-gaps-6 .syn-detail').innerHTML()).includes('&lt;b&gt;MOOP&lt;/b&gt;') && (await p.locator('#acc-syn-gaps-6 .syn-detail').innerHTML()).includes('&lt;i&gt;environment&lt;/i&gt;'), arrows.join('|'));
+check('gaps: no model suggestions -> falls back to the pillar’s own topics', (await p.locator('#acc-syn-gaps-11 .syn-arrows li').count()) === 4 && (await p.locator('#acc-syn-gaps-11 .syn-arrows li').first().innerText()).includes('Designing for playa first'));
 check('no run-local participant labels visible anywhere', !/Participant [A-Z]/.test(await p.locator('main').innerText()));
-const stored = (await (await fetch(B + '/__db')).json()).synthesis;
-check('stored synthesis has no run-local labels or ids', !/Participant [A-Z]/.test(JSON.stringify(stored)) && !JSON.stringify(stored).includes(stranger) && JSON.stringify(stored).includes('1 anonymous'));
-const gaps = p.locator('.card:has(.tag-gaps) .synthesis-item');
-check('gaps: two pillars listed', (await gaps.count()) === 2);
-check('gaps: "Why it matters" bullet', (await gaps.nth(0).locator('.syn-list > li').nth(0).innerText()).startsWith('Why it matters'));
-const topics = await gaps.nth(0).locator('.syn-sub li').allInnerTexts();
-check('gaps: 4 topics from the pillar reference (Environmental Stewardship)', topics.length === 4 && topics[0].includes('Digital MOOP'), topics[0]);
-check('gaps: LLM html escaped', (await gaps.nth(0).innerHTML()).includes('&lt;i&gt;environment&lt;/i&gt;'));
-check('LLM html still escaped', (await p.locator('.card:has(.tag-commons) .synthesis-item').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;'));
+await p.evaluate(() => render());
+check('open/closed choices survive a redraw', (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'true' && (await p.locator('#acc-syn-gaps .syn-shead').getAttribute('aria-expanded')) === 'true');
+await p.click('#acc-syn-commons .syn-shead'); await settle();
+check('collapsing a section keeps what was open inside it', (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0 && (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'true');
+await p.click('#acc-syn-commons .syn-shead'); await settle();
+check('phone width: no sideways scrolling', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+const fam = await p.evaluate(() => [getComputedStyle(document.querySelector('.syn')).fontFamily, getComputedStyle(document.querySelector('.syn-num')).fontFamily, getComputedStyle(document.querySelector('.syn-stat')).backgroundColor]);
+check('fonts: DM Sans body, Space Mono labels; dark surface #1a1a1f', fam[0].includes('DM Sans') && fam[1].includes('Space Mono') && fam[2] === 'rgb(26, 26, 31)', fam.join(' / '));
+const stored0 = (await (await fetch(B + '/__db')).json()).synthesis;
+check('stored synthesis: per-pillar participants are names or "Anonymous" only; contested consensus computed server-side', JSON.stringify(stored0.commons[0].participants) === '["Me","Persona 2","Anonymous"]' && stored0.contested[0].participants.length === 3 && stored0.contested[0].participants.every((n) => ['Me', 'Persona 2', 'Persona 3', 'Anonymous'].includes(n)) && stored0.contested[0].consensus === 67 && !JSON.stringify(stored0).includes(stranger));
+await p.emulateMedia({ colorScheme: 'light' });
+const light = await p.evaluate(() => [getComputedStyle(document.querySelector('.syn-stat')).backgroundColor, getComputedStyle(document.querySelector('.syn-tag')).color, getComputedStyle(document.querySelector('.syn-stat')).borderTopColor]);
+check('light mode: white surface and darker section colours', light[0] === 'rgb(255, 255, 255)' && light[1] !== 'rgb(74, 186, 122)', light.join(' / '));
+await p.emulateMedia({ colorScheme: 'dark' });
 await p.screenshot({ path: 'screens/shot-synth-attrib.png', fullPage: true });
 
 // what the model was actually asked
@@ -93,14 +129,26 @@ check('two anonymous contributions share one run-local participant source', (pro
 check('no auth UUID, legacy uid, email, or public names sent to model', !prompt.includes(stranger) && !/uid|@example\.com|Persona 2|Persona 3/.test(prompt));
 check('four distinct people despite five contributions', prompt.includes('5 contributions from 4 distinct participants'), prompt.match(/\d contributions from \d distinct participants/)[0]);
 
-// legacy saved synthesis (string positions) still renders
-await p.evaluate(() => { S.synthesis = { commons: [{ pillar: 'OldC', summary: 'Old summary', strength: 'strong', voices: ['Me'] }], contested: [{ pillar: 'Old', positions: ['A view', 'B view'], tension: 't' }], gaps: [{ pillar: 'OldG', note: 'old note' }], timestamp: Date.now(), count: 1 }; render(); });
-check('legacy commons (summary+voices) still renders', (await p.locator('.syn-list.commons li').first().innerText()).includes('Old summary') && (await p.locator('.syn-list.commons .who').first().innerText()) === 'Me');
-check('legacy gaps (no pillarId) render without topics', (await p.locator('.syn-list.gaps li').count()) === 1);
-check('legacy string positions render as Position N bullets', (await p.locator('.card:has(.tag-contested) .syn-list li .who').first().innerText()) === 'Position 1' && (await p.locator('.card:has(.tag-contested) .syn-list li').first().innerText()).includes('A view'));
+// sloppy model output is repaired, not trusted: numbers clamped, missing fields tolerated
+await fetch(B + '/__synth?m=sparse');
+const sparse = await (await fetch(B + '/api/synthesize', { method: 'POST', headers: { 'x-admin-key': 'letmein', 'content-type': 'application/json' }, body: JSON.stringify({ includeTests: true }) })).json();
+await fetch(B + '/__synth?m=full');
+check('sparse output: consensus clamped to 0-100, or taken from the strength label when unusable', sparse.commons[0].consensus === 100 && sparse.commons[1].consensus === 0 && sparse.commons[1].strength === 'emerging');
+check('sparse output: themes/quotes/suggestions capped and trimmed', sparse.commons[1].themes[0].length === 60 && sparse.commons[1].quotes.length === 2 && sparse.gaps[0].suggestions.length === 4);
+check('sparse output: half-empty spectrum is dropped, position values clamped', sparse.contested[0].spectrum === null && sparse.contested[0].positions.map((x) => x.value).join() === '0,100');
+check('sparse output: pillar participants are still names/Anonymous only', sparse.commons[0].participants.length === 1 && sparse.contested[0].participants.length === 2 && !JSON.stringify(sparse).includes(stranger));
+
+// legacy saved synthesis (older shapes, no consensus/participants/spectrum) still renders
+await p.evaluate(() => { S.acc = {}; S.synthesis = { commons: [{ pillar: 'OldC', summary: 'Old summary', strength: 'strong', voices: ['Me', '2 anonymous'] }], contested: [{ pillar: 'Old', positions: ['A view', 'B view'], tension: 't' }], gaps: [{ pillar: 'OldG', note: 'old note' }], timestamp: Date.now(), count: 1 }; render(); });
+await p.click('#acc-syn-commons .syn-shead'); await p.click('#acc-syn-contested .syn-shead'); await p.click('#acc-syn-gaps .syn-shead'); await settle();
+await p.click('#acc-syn-commons-OldC .syn-phead'); await p.click('#acc-syn-contested-Old .syn-phead'); await p.click('#acc-syn-gaps-OldG .syn-phead'); await settle();
+check('legacy commons: bar from the strength label, pill counts people from the old voices list, summary shown', (await p.locator('#acc-syn-commons-OldC .syn-meter i').evaluate((e) => e.style.width)) === '85%' && (await p.locator('#acc-syn-commons-OldC .sugg-count').innerText()) === '(3)' && (await p.locator('#acc-syn-commons-OldC .syn-pts li').first().innerText()).includes('Old summary'));
+check('legacy gaps (no pillarId, no suggestions) show just the note', (await p.locator('#acc-syn-gaps-OldG .syn-arrows').count()) === 0 && (await p.locator('#acc-syn-gaps-OldG .syn-note').innerText()) === 'old note');
+check('legacy string positions render as Position N and there is no spectrum', (await p.locator('#acc-syn-contested-Old .syn-pts li .syn-by').first().innerText()) === '— Position 1' && (await p.locator('#acc-syn-contested-Old .syn-pts li').first().innerText()).includes('A view') && (await p.locator('#acc-syn-contested-Old .spec-track').count()) === 0);
 
 // locking resets personas
-await p.click('button:has-text("Lock project-lead controls")'); await nav('Submit');
+check('lead mode has no in-page "lock" link (it could strand the lead outside a locked Synthesis tab)', (await p.locator('button:has-text("Lock project-lead controls")').count()) === 0);
+await p.evaluate(() => lockAdmin()); await nav('Submit');   // still how a rejected key re-locks
 check('lock: switcher gone, back to participant verification', (await p.locator('.persona-row').count()) === 0 && await p.locator('.verify-card').isVisible());
 check('no page errors', errs.length === 0, errs.join('|'));
 console.log(`\n${pass}/${total} passed`); await b.close();

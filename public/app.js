@@ -246,24 +246,26 @@ function renderSuggested(groups){
   if(!groups.length)return '<p class="acc-empty">No new pillars suggested yet.</p>';
   return groups.map(g=>{
     const names=g.people.map(p=>p.name).join(', ');
-    return`<div class="sugg-row"><span class="sugg-name">${esc(g.idea)}</span>
+    return`<div class="sugg-row who-host"><span class="sugg-name">${esc(g.idea)}</span>
       <button class="sugg-count" onclick="toggleWho(event,this)" aria-label="${g.people.length} suggested this: ${esc(names)}">(${g.people.length})</button>
       <span class="sugg-who" role="tooltip">Suggested by ${esc(names)}</span></div>`;}).join('');
 }
 // Hover shows the names on desktop (CSS); tapping the count toggles them for touch screens.
-function closeWho(except){document.querySelectorAll('.sugg-row.open').forEach(r=>{if(r!==except)r.classList.remove('open');});}
-function toggleWho(ev,btn){ev.stopPropagation();const row=btn.closest('.sugg-row');closeWho(row);row.classList.toggle('open');}
+function closeWho(except){document.querySelectorAll('.who-host.open').forEach(r=>{if(r!==except)r.classList.remove('open');});}
+function toggleWho(ev,btn){ev.stopPropagation();const host=btn.closest('.who-host');closeWho(host);host.classList.toggle('open');}
 document.addEventListener('click',()=>closeWho());
 function accordion(id,title,count,inner){
   const open=S.acc[id];
-  return`<section class="acc" id="acc-${id}"><button class="acc-head" aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev" aria-hidden="true">${open?'▾':'▸'}</span><span class="acc-title">${title} <span class="acc-count">(${count})</span></span></button>
+  return`<section class="acc" id="acc-${id}"><button class="acc-head" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev" aria-hidden="true">${open?'▾':'▸'}</span><span class="acc-title">${title} <span class="acc-count">(${count})</span></span></button>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}>${inner}</div></section>`;
 }
 // Animated with max-height. The toggle edits the DOM directly (a full render() would replace the element and cancel the transition).
 function toggleAcc(id){
   const el=document.getElementById('acc-'+id),body=document.getElementById('acc-body-'+id);if(!el||!body)return;
   const open=S.acc[id]=!S.acc[id];
-  el.querySelector('.acc-head').setAttribute('aria-expanded',open);el.querySelector('.acc-chev').textContent=open?'▾':'▸';
+  // the first [data-acc-head] inside the section is its own header (nested sections come later in the DOM)
+  el.querySelector('[data-acc-head]').setAttribute('aria-expanded',open);el.classList.toggle('open',open);
+  const chev=el.querySelector('[data-acc-head] .acc-chev');if(!chev.classList.contains('rot'))chev.textContent=open?'▾':'▸';   // .rot chevrons turn with CSS instead
   clearTimeout(body._t);closeWho();
   if(open){
     body.removeAttribute('inert');body.style.maxHeight=body.scrollHeight+'px';
@@ -323,6 +325,103 @@ function renderVoices(m){
   ${accordion('suggested','Suggested Pillars',groups.length,renderSuggested(groups))}`;
 }
 
+// ---------- Synthesis results: three levels (section → pillar → detail), everything starts collapsed ----------
+// Older saved syntheses lack the newer fields (consensus, participants, themes, spectrum...), so each item is normalised first.
+const STRENGTH_PCT={strong:85,moderate:60,emerging:35};
+// "Mary", "2 anonymous", "Mary (2 participants)" -> one entry per person
+function expandVoices(list){
+  const out=[];
+  for(const v of list||[]){
+    const a=/^(\d+) anonymous$/.exec(v);if(a){for(let i=0;i<+a[1];i++)out.push('Anonymous');continue;}
+    const m=/^(.*) \((\d+) participants\)$/.exec(v);if(m){for(let i=0;i<+m[2];i++)out.push(m[1]);continue;}
+    out.push(v);
+  }
+  return out;
+}
+// Union of several voice lists. Only used for old results, which can't say whether two "anonymous" entries are the same person.
+function unionPeople(lists){
+  const named=new Set();let anon=0;
+  for(const l of lists){const e=expandVoices(l);anon=Math.max(anon,e.filter(n=>n==='Anonymous').length);e.forEach(n=>{if(n!=='Anonymous')named.add(n);});}
+  return[...[...named].sort((a,b)=>a.localeCompare(b)),...Array(anon).fill('Anonymous')];
+}
+function synCommons(c){
+  const points=c.points?.length?c.points:[{point:c.summary,voices:c.voices}];   // oldest results: one summary + voices per pillar
+  return{name:c.pillar,id:c.pillarId,pct:Number.isFinite(c.consensus)?c.consensus:(STRENGTH_PCT[c.strength]??35),
+    people:c.participants||unionPeople(points.map(p=>p.voices)),themes:c.themes||[],quotes:c.quotes||[],nuance:c.nuance||'',points};
+}
+function synContested(c){
+  const positions=(c.positions||[]).map(p=>typeof p==='string'?{stance:p,voices:[]}:p).map(p=>({...p,people:p.people||expandVoices(p.voices)}));
+  const people=c.participants||unionPeople(positions.map(p=>p.voices));
+  const biggest=Math.max(0,...positions.map(p=>p.people.length));
+  return{name:c.pillar,id:c.pillarId,pct:Number.isFinite(c.consensus)?c.consensus:(people.length?Math.round(100*biggest/people.length):0),
+    people,positions,tension:c.tension||'',spectrum:c.spectrum||null};
+}
+const pillarEmoji=id=>PILLARS.find(p=>p.id===id)?.emoji||'';
+// (N) pill; hovering it (desktop) or tapping it (phone) lists the participants. Must sit outside the row's header button.
+function synPill(people){
+  if(!people.length)return'';
+  const names=people.join(', ');
+  return`<button class="sugg-count" onclick="toggleWho(event,this)" aria-label="${people.length} participants: ${esc(names)}">(${people.length})</button><span class="sugg-who" role="tooltip">${esc(names)}</span>`;
+}
+function synByLine(voices){const v=(voices||[]).map(esc).join(', ');return v?` <span class="syn-by">— ${v}</span>`:'';}
+function synSpectrum(c){
+  const sp=c.spectrum;
+  if(!sp||!sp.left||!sp.right||!c.positions.some(p=>p.people.length))return'';
+  const per=6,rows=Math.max(1,...c.positions.map(p=>Math.ceil(p.people.length/per)));
+  const dots=c.positions.flatMap(pos=>{
+    const n=Math.min(per,pos.people.length);
+    return pos.people.map((name,i)=>{
+      const col=i%per,row=Math.floor(i/per),inRow=Math.min(per,pos.people.length-row*per);
+      const x=Math.min(96,Math.max(4,pos.value+(col-(inRow-1)/2)*4.5));
+      const edge=x<22?' edge-l':x>78?' edge-r':'';
+      return`<button class="dot who-host${edge}" style="left:${x.toFixed(1)}%;top:${5+row*16}px" aria-label="${esc(name)}: ${esc(pos.stance)}" onclick="toggleWho(event,this)"><span class="sugg-who" role="tooltip">${esc(name)}</span></button>`;});
+  }).join('');
+  return`<div class="syn-label">Tension spectrum</div><div class="syn-spec"><div class="spec-field" style="height:${24+(rows-1)*16}px"><div class="spec-track"></div>${dots}</div><div class="spec-poles"><span>${esc(sp.left)}</span><span>${esc(sp.right)}</span></div></div>`;
+}
+function synDetail(kind,c){
+  if(kind==='commons'){
+    const themes=c.themes.length?`<div class="syn-themes">${c.themes.map(t=>`<span class="syn-theme">${esc(t)}</span>`).join('')}</div>`:'';
+    const pts=c.points.map(p=>`<li>${esc(p.point)}${synByLine(p.voices)}</li>`).join('');
+    const quotes=c.quotes.map(q=>`<blockquote class="syn-quote">“${esc(q)}”</blockquote>`).join('');
+    return`<div class="syn-detail">${themes}<div class="syn-label">What people agree on</div><ul class="syn-pts">${pts}</ul>${quotes}${c.nuance?`<div class="syn-label">Nuance</div><p class="syn-note">${esc(c.nuance)}</p>`:''}</div>`;
+  }
+  const pos=c.positions.map((p,i)=>`<li><strong>${esc(p.stance)}</strong>${p.voices?.length?synByLine(p.voices):` <span class="syn-by">— Position ${i+1}</span>`}</li>`).join('');
+  return`<div class="syn-detail">${synSpectrum(c)}<div class="syn-label">Positions</div><ul class="syn-pts">${pos}</ul>${c.tension?`<div class="syn-label">Core tension</div><p class="syn-note">${esc(c.tension)}</p>`:''}</div>`;
+}
+function synPillarRow(kind,c){
+  const id=`syn-${kind}-${c.id??String(c.name).replace(/\W+/g,'-')}`,open=!!S.acc[id];
+  const meter=`<span class="syn-meter" role="img" aria-label="${kind==='commons'?'Consensus':'Largest group'} ${c.pct}%"><i style="width:${c.pct}%"></i></span>`;
+  return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow who-host">
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')">${meter}<span class="syn-pname">${pillarEmoji(c.id)} ${esc(c.name)}</span><span class="acc-chev rot" aria-hidden="true">▸</span></button>${synPill(c.people)}</div>
+    <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}>${synDetail(kind,c)}</div></section>`;
+}
+function synGapRow(g){
+  const id=`syn-gaps-${g.pillarId??String(g.pillar).replace(/\W+/g,'-')}`,open=!!S.acc[id];
+  const sugg=g.suggestions?.length?g.suggestions:(PILLARS.find(p=>p.id===g.pillarId)?.bullets||[]).slice(0,4);   // older results: the pillar's own topics
+  return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow">
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="syn-pname">${pillarEmoji(g.pillarId)} ${esc(g.pillar)}</span><span class="acc-chev rot" aria-hidden="true">▸</span></button></div>
+    <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-detail">
+      ${g.note?`<div class="syn-label">Why it matters</div><p class="syn-note">${esc(g.note)}</p>`:''}
+      ${sugg.length?`<div class="syn-label">What to address next</div><ul class="syn-arrows">${sugg.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}</div></div></section>`;
+}
+function synSection(key,tag,title,count,rows,empty){
+  const id='syn-'+key,open=!!S.acc[id];
+  return`<section class="acc syn-sec ${key}${open?' open':''}" id="acc-${id}">
+    <button class="syn-shead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="syn-tag">${tag}</span><span class="syn-stitle">${title}</span><span class="syn-scount">(${count})</span><span class="acc-chev rot" aria-hidden="true">▸</span></button>
+    <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-rows">${rows||`<p class="acc-empty">${empty}</p>`}</div></div></section>`;
+}
+function renderSynthesisResult(syn){
+  const commons=(syn.commons||[]).map(synCommons),contested=(syn.contested||[]).map(synContested),gaps=syn.gaps||[];
+  const covered=new Set([...(syn.commons||[]),...(syn.contested||[])].map(c=>c.pillarId??c.pillar)).size;
+  const stat=(icon,color,num,label)=>`<div class="syn-stat"><i class="ti ti-${icon}" style="color:${color}" aria-hidden="true"></i><div class="syn-num">${num}</div><div class="syn-slabel">${label}</div></div>`;
+  return`<div class="syn">
+    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+'/12','Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
+    ${synSection('commons','The Commons','Where we agree',commons.length,commons.map(c=>synPillarRow('commons',c)).join(''),'No shared ground found yet.')}
+    ${synSection('contested','Contested','Where we diverge',contested.length,contested.map(c=>synPillarRow('contested',c)).join(''),'No open disagreements found.')}
+    ${synSection('gaps','Gaps','What’s missing',gaps.length,gaps.map(synGapRow).join(''),'Every pillar was addressed.')}
+  </div>`;
+}
+
 function renderSynthesis(m){
   if(!sb){setupNeeded(m);return;}
   const real=S.synthIncludeTests?S.submissions:S.submissions.filter(s=>!s.isTest);
@@ -338,21 +437,7 @@ function renderSynthesis(m){
     const syn=S.synthesis,ts=syn.timestamp?new Date(syn.timestamp).toLocaleString():'';
     const participantText=`${syn.count||'?'} participant${syn.count===1?'':'s'}`;
     const contributionText=syn.submissionCount?` · ${syn.submissionCount} contribution${syn.submissionCount===1?'':'s'}`:'';
-    sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${participantText}${contributionText} · ${syn.includedTests?'tests included':'tests excluded'}</p>`;
-    if(syn.commons?.length){sb_+=`<div class="card"><span class="section-tag tag-commons">The Commons — Where we agree</span>`;syn.commons.forEach(c=>{
-      // older saved syntheses had one summary + voices per pillar instead of a list of points
-      const points=c.points?.length?c.points:[{point:c.summary,voices:c.voices}];
-      const items=points.map(p=>`<li>${p.voices?.length?`<span class="who">${p.voices.map(esc).join(', ')}</span>`:''} ${esc(p.point)}</li>`).join('');
-      sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong>${c.strength?` <span class="pill auto">${esc(c.strength)}</span>`:''}<ul class="syn-list commons">${items}</ul></div>`;});sb_+=`</div>`;}
-    if(syn.contested?.length){sb_+=`<div class="card"><span class="section-tag tag-contested">Contested Ground — Where we diverge</span>`;syn.contested.forEach(c=>{
-      const items=(c.positions||[]).map((p,i)=>{const o=typeof p==='string'?{stance:p,voices:[]}:p;   // older saved syntheses stored plain strings
-        return`<li>${o.voices?.length?`<span class="who">${o.voices.map(esc).join(', ')}</span>`:`<span class="who">Position ${i+1}</span>`} ${esc(o.stance)}</li>`;}).join('');
-      sb_+=`<div class="synthesis-item"><strong>${esc(c.pillar)}</strong><ul class="syn-list">${items}</ul>${c.tension?`<div class="tension"><strong>Core tension:</strong> ${esc(c.tension)}</div>`:''}</div>`;});sb_+=`</div>`;}
-    if(syn.gaps?.length){sb_+=`<div class="card"><span class="section-tag tag-gaps">The Gaps — What's missing</span>`;syn.gaps.forEach(g=>{
-      const topics=(PILLARS.find(p=>p.id===g.pillarId)?.bullets||[]).slice(0,4);
-      sb_+=`<div class="synthesis-item"><strong>${esc(g.pillar)}</strong><ul class="syn-list gaps">
-        <li><span class="who">Why it matters</span> ${esc(g.note)}</li>
-        ${topics.length?`<li><span class="who">Topics to consider</span><ul class="syn-sub">${topics.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></li>`:''}</ul></div>`;});sb_+=`</div>`;}
+    sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${participantText}${contributionText} · ${syn.includedTests?'tests included':'tests excluded'}</p>${renderSynthesisResult(syn)}`;
   }else{sb_=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once synthesis runs.</p></div>
     <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>
     <div class="preview-block"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span><p style="margin-top:8px">Uncovered pillars appear here.</p></div>`;}
@@ -370,7 +455,7 @@ function renderSynthesis(m){
       :`<p style="font-size:13px;color:var(--muted)">All ${testCount} submissions are tests. Toggle "Include test submissions" above to analyze them.</p>`}
   </div>`:''}
   ${!S.isOwner&&!S.synthesis?'<p style="font-size:13px;color:var(--muted);text-align:center;margin-top:16px">Only the project lead can trigger synthesis.</p>':''}
-  ${S.synthesizing?'':`<div style="text-align:center;margin-top:16px"><button class="raw-toggle" onclick="${S.isOwner?'lockAdmin()':'unlockAdmin()'}">${S.isOwner?'Lock project-lead controls':'Project lead? Unlock'}</button></div>`}`;
+  ${S.synthesizing||S.isOwner?'':`<div style="text-align:center;margin-top:16px"><button class="raw-toggle" onclick="unlockAdmin()">Project lead? Unlock</button></div>`}`;   // no in-page "lock" link: it could strand the lead outside a locked Synthesis tab
 }
 
 // ---------- project-lead unlock (the key is checked by the server on every synthesis run) ----------

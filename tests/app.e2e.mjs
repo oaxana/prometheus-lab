@@ -148,9 +148,10 @@ await page.click('.toggle-row:has-text("Include test submissions")');
 check('include-tests updates count', (await page.locator('button:has-text("Run synthesis")').innerText()).includes('2 contributions'));
 await page.click('.toggle-row:has-text("Include test submissions")');
 await page.click('button:has-text("Run synthesis")');
-await page.waitForSelector('.tag-commons');
-check('commons/contested/gaps cards rendered', (await page.locator('.card .section-tag').count()) === 3);
-check('LLM html is escaped', (await page.locator('.synthesis-item').first().innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;'));
+await page.waitForSelector('.syn-sec');
+check('three section groups rendered and all start collapsed', (await page.locator('.syn-sec').count()) === 3 && (await page.locator('.syn-shead[aria-expanded=true]').count()) === 0);
+await page.click('#acc-syn-commons .syn-shead'); await page.click('#acc-syn-commons .syn-phead'); await page.waitForTimeout(450);
+check('LLM html is escaped', (await page.locator('#acc-syn-commons .syn-detail').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;'));
 check('last-run line uses participant and contribution counts', (await page.locator('text=/Last run:.*1 participant.*1 contribution.*tests excluded/').count()) === 1);
 await page.screenshot({ path: SHOTS + 'screens/shot-synthesis.png', fullPage: true });
 

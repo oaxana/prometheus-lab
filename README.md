@@ -222,12 +222,17 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 **Stored synthesis shape**
 ```jsonc
 { "commons":   [{ "pillar", "pillarId", "strength": "strong|moderate|emerging",
+                  "consensus": 0-100, "participants": ["Mary", "Anonymous"],
+                  "themes": ["..."], "quotes": ["..."], "nuance": "...",
                   "points": [{ "point", "voices": ["Mary", "2 anonymous"] }] }],
-  "contested": [{ "pillar", "pillarId", "tension",
-                  "positions": [{ "stance", "voices": ["Mary"] }] }],
-  "gaps":      [{ "pillar", "pillarId", "note" }] }
+  "contested": [{ "pillar", "pillarId", "tension", "consensus": 0-100 /* biggest camp's share, computed on the server */,
+                  "participants": ["Mary", "Anonymous"],
+                  "spectrum": { "left", "right" } | null,
+                  "positions": [{ "stance", "value": 0-100, "voices": ["Mary"], "people": ["Mary"] }] }],
+  "gaps":      [{ "pillar", "pillarId", "note", "suggestions": ["..."] }] }
 ```
-Older saved results (plain-string positions, single `summary` per commons item) still display.
+`participants` / `people` are one entry per distinct person: their saved public name, or "Anonymous". The Synthesis tab shows this as three collapsible levels (section, then pillar, then detail), all collapsed to start with. A stats row (voices heard, pillars covered, common ground, contested, gaps) sits on top.
+Older saved results (plain-string positions, single `summary` per commons item, no consensus/participants/spectrum) still display: the consensus bar comes from the strength label, participants are rebuilt from the old `voices` lists (an approximation), and there is no spectrum. The next synthesis run fills in the new fields.
 
 ## API reference
 

@@ -42,13 +42,22 @@ Password-gated crew web app for the Burning Man AI Constitution. Plain HTML/CSS/
 - Pillars, Voices and Synthesis lock via `isLocked()` / `hasContributed()`, derived from `S.submissions` (`mine && !isTest`), so no extra query and it unlocks right after a submit. `S.isOwner` (project lead) bypasses. Locked tabs are `aria-disabled`, still clickable (toast); Playwright needs `{force:true}` to click them.
 - Privacy copy deliberately says "Your email stays private", not the brief's "We store nothing / zero personal data" (the email is kept in Supabase Auth, optional display name and raw text are stored).
 
-## Voices tab: counts, accordions, suggested pillars (uncommitted)
+## Voices tab: counts, accordions, suggested pillars (deployed, commit `9452dc3`)
 - Header and "Mine only" counts follow the filters: tests only count while "Show tests" is on; the header also follows "Mine only". "Show tests" uses the normal accent when on.
 - Submissions and Suggested Pillars are accordions (`accordion()` / `toggleAcc()` in `public/app.js`, state `S.acc`). `toggleAcc` edits the DOM directly so the max-height animation isn't cancelled by `render()`.
 - Suggested Pillars come from `GET /api/suggested-pillars` (service-role read, no SQL change): `ai_mapping.newIdeas` of discovery inputs that belong to a saved submission, grouped by case/punctuation-insensitive match, one entry per person, "Anonymous" unless they chose a name. Only idea text + display names leave the server. Different wordings of one theme do NOT merge (real model output is unverified).
 - `api/map-pillars.js` now asks for new ideas as 2-5 word pillar-style names. "Mine only" does not filter suggestions (the server doesn't know who is asking).
 
-## Where we left off (2026-10-06)
+## Synthesis page redesign (deployed 2026-10-07)
+- `renderSynthesisResult()` and helpers in `public/app.js`: stats row + three collapsible levels (section → pillar → detail), all collapsed by default, open state in `S.acc` (keys like `syn-commons`, `syn-commons-10`). Reuses `toggleAcc()` (chevrons with class `rot` turn via CSS) and the `who-host` tap/hover tooltip (`toggleWho`).
+- `api/synthesize.js` now also asks for and validates `consensus`, `themes`, `quotes`, `nuance` (commons), `spectrum` + per-position `value` (contested), `suggestions` (gaps), and computes `participants` per pillar server-side (names or "Anonymous", never ids). No SQL change: the columns are jsonb. Older saved shapes are normalised in `synCommons` / `synContested`.
+- The in-page "Lock project-lead controls" link was removed: with no real submission of their own the lead was locked out of the Synthesis tab (the only place the unlock button lives) and couldn't get back in. `lockAdmin()` still runs when the server rejects a wrong key. To re-enter lead mode after a lock: submit one real voice, then Synthesis → "Project lead? Unlock" (or set the `prometheus-lab-admin` sessionStorage key from the browser console).
+- Fonts DM Sans + Space Mono (Google Fonts link in `index.html`) and the `--syn-*` colour tokens are scoped to `.syn`; the rest of the app keeps its own palette. Real model output for the new fields is unverified (tests use fakes).
+
+## Where we left off (2026-10-07, end of session)
+Pushed this session: Voices tab changes (`9452dc3`) and the Synthesis redesign + removal of the lock link. The theme is not a setting: light/dark follows the visitor's device (`prefers-color-scheme`); there is no toggle. The tab lock is per signed-in account (a real, non-test submission), never per IP. Still unverified live: real model output for the new synthesis fields and the suggested-pillar names. Synthesis toggle "Include test submissions" still has the old grey inline style.
+
+## Earlier status (2026-10-06)
 The verified-participant cutover is complete. The owner ran the full `supabase-setup.sql`; commit `adcfce8` was pushed to `main`; Vercel deployed it successfully; and the production alias is live. Post-deploy probes confirmed the crew gate returns `401` for the site, config, and every API without its cookie; the new submission RPC and synthesis column exist; and direct anonymous reads of private participant/submission tables are denied. Supabase Auth's project email quota was raised to 60/hour after the previous two-email/hour quota blocked testing; keep the per-user resend cooldown at 60 seconds.
 
 The hosted Account A smoke test passed: six-digit OTP verification, an `is_test` submission, owner-only raw text and controls, and persistence after refresh. One test row containing `Production ownership test — account A` intentionally remains in production for the cross-account check. The owner stopped before Account B and wants to resume in a new session.
