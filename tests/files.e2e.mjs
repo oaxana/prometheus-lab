@@ -38,7 +38,7 @@ await p.setInputFiles(input, { name: 'notes.zip', mimeType: 'application/zip', b
 await p.waitForSelector('.toast:has-text("isn’t supported")');
 check('unsupported type -> toast, previous file kept', (await chip()).join() === 'legacy.ppt');
 // ---- Google Doc link replaces the file
-await p.fill('#gdoc-url', GOOD); await p.click('button:has-text("Add")');
+await p.fill('#gdoc-url', GOOD); await p.click('button:text-is("Add")');
 await p.waitForFunction(() => document.querySelector('.file-preview .name')?.textContent === 'Doc: Camp Plan');
 check('Google Doc added, titled from Google, replaces the file', (await chip()).join() === 'Doc: Camp Plan');
 check('link box cleared after adding', (await p.inputValue('#gdoc-url')) === '');
@@ -47,10 +47,10 @@ await p.fill('#gdoc-url', SLIDES); await p.press('#gdoc-url', 'Enter');
 await p.waitForFunction(() => document.querySelector('.file-preview .name')?.textContent === 'Slides: Camp Deck');
 check('Google Slides added (Enter key)', true);
 // ---- private + junk links
-await p.fill('#gdoc-url', 'https://docs.google.com/document/d/PRIVATEDOCaaaaaaaaaaaaaaaaaaaaaaaaa/edit'); await p.click('button:has-text("Add")');
+await p.fill('#gdoc-url', 'https://docs.google.com/document/d/PRIVATEDOCaaaaaaaaaaaaaaaaaaaaaaaaa/edit'); await p.click('button:text-is("Add")');
 await p.waitForSelector('.toast:has-text("Anyone with the link")');
 check('private doc -> toast tells you how to share it', (await chip()).join() === 'Slides: Camp Deck');
-await p.fill('#gdoc-url', 'https://example.com/whatever'); await p.click('button:has-text("Add")');
+await p.fill('#gdoc-url', 'https://example.com/whatever'); await p.click('button:text-is("Add")');
 await p.waitForSelector('.toast:has-text("doesn’t look like")');
 check('non-Google link rejected client-side', (await chip()).join() === 'Slides: Camp Deck');
 // typed note and half-typed link survive a re-render
@@ -84,7 +84,7 @@ check('stored with the right content type', obj.type === 'application/vnd.openxm
 
 // ---- Google Doc submission: text goes to Claude, the link (not a storage path) is kept
 await runWizard(p, { mode: 'upload', stopAt: 5 });
-await p.fill('#gdoc-url', GOOD); await p.click('button:has-text("Add")'); await p.waitForSelector('.file-preview');
+await p.fill('#gdoc-url', GOOD); await p.click('button:text-is("Add")'); await p.waitForSelector('.file-preview');
 await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 check('Google Doc text in prompt, with its title', (await lastPrompt()).at(-1).text.includes('[From: Doc: Camp Plan]') && (await lastPrompt()).at(-1).text.includes('GOOGLEDOC-MARKER'));
 state = await db(); row = state.submissions.at(-1);

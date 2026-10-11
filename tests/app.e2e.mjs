@@ -240,7 +240,7 @@ check('light mode bg is cream', (await lp.evaluate(() => getComputedStyle(docume
 check('dark mode bg is #0d0b14', (await page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === 'rgb(13, 11, 20)');
 
 // Explicit sign-out removes private ownership access on this browser.
-check('green box has no buttons any more (name and sign-out live elsewhere)', (await (async () => { await page.click('nav button:has-text("Submit")'); return page.locator('.auth-status button').count(); })()) === 0);
+check('green box has one button only: the clickable name (no Edit name / Sign out there)', (await (async () => { await page.click('nav button:has-text("Submit")'); return page.locator('.auth-status button').allInnerTexts(); })()).length === 1 && !/sign out|edit name/i.test(await page.locator('.auth-status').innerText()));
 await page.click('nav button:has-text("Home")');await page.click('.admin-link-row button:has-text("Sign out")');await page.click('nav button:has-text("Submit")');await page.waitForSelector('.verify-card');
 check('sign out returns to participant verification', await page.locator('.verify-card').isVisible());
 check('after sign-out the tabs lock again', (await page.locator('nav button.locked').count()) === 3);

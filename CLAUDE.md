@@ -27,6 +27,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 
 **Green box / name / step 2 (2026-10-11, uncommitted):** the green "Verified participant" box has no buttons; "Sign out" moved to the Home footer next to Admin (tests must click `.admin-link:has-text("Admin")`, there are now two `.admin-link`s when signed in); `editDisplayName` (a `prompt()` that did nothing on phones) is gone: step 1's name box is always an editable input prefilled with the saved name, and `wzSubmit` saves it when it differs from `S.participantName` (this also renames earlier named contributions). Step 2's first paragraph is one short sentence and Write it / Say it stay side by side on phones.
 
+**Click-to-edit name (2026-10-11):** the bold name in the green box (`.auth-name`, dotted underline + pencil) turns into an inline input (Enter/Save, Esc/✕) via `startNameEdit` / `saveNameEdit` in `public/app.js`; box height stays ~44px. Note the global `input[type="text"]` rule beats single-class selectors, so the inline input is styled as `.auth-status .auth-name-input`.
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).

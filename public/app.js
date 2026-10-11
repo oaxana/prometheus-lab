@@ -8,7 +8,7 @@ let S={view:'home',submissions:[],isAdmin:false,adminChecked:false,adminBusy:fal
   synthesizing:false,displayName:'',
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
   loaded:false,authReady:false,session:null,participantName:'',
-  authEmail:'',otpSent:false,authBusy:false,authError:'',
+  authEmail:'',otpSent:false,authBusy:false,authError:'',editingName:false,nameDraft:'',nameBusy:false,
   // Synthesis history: version list (metadata, newest first), full bodies by version (immutable, so cached
   // for good), the version being viewed (null = latest), and the pending-material status from GET /api/synthesize.
   synVersions:[],synBodies:{},synView:null,synStatus:null,synStatusState:'',synStatusKey:'',
@@ -117,6 +117,19 @@ async function saveParticipantName(name){
   if(error)throw error;
   S.participantName=data||clean;S.displayName=S.participantName;
 }
+// The bold name in the green "Verified" box is a button: click it to rename yourself from any wizard step.
+function startNameEdit(){S.editingName=true;S.nameDraft=S.participantName||S.displayName||'';render();const e=document.getElementById('auth-name-input');if(e){e.focus();e.select();}}
+function cancelNameEdit(){S.editingName=false;S.nameBusy=false;render();}
+async function saveNameEdit(){
+  if(S.nameBusy)return;
+  const name=String(S.nameDraft||'').trim();
+  if(!name||name.length>80)return alert('Your name must be 1 to 80 characters.');
+  if(name===S.participantName){cancelNameEdit();return;}
+  S.nameBusy=true;render();
+  try{await saveParticipantName(name);S.editingName=false;S.nameBusy=false;const box=document.getElementById('display-name');if(box)box.value=S.displayName;   // render() copies this box back into state, so update it too
+    await refresh();render();showToast('Name saved');}
+  catch(e){S.nameBusy=false;render();alert('Error: '+(e.message||'could not save name'));}
+}
 // ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
 const LOCKED_TABS={pillars:'Share your own thinking first, then explore the pillars.',voices:'Share your voice first, then see what others have shared.',synthesis:'Share your voice first, then see where the group agrees, disagrees and has gaps.'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
@@ -207,7 +220,9 @@ function renderSubmit(m){
       :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><div class="spam-nudge" role="note"><span class="spam-icon" aria-hidden="true">📬</span><div><strong>Code not showing up?</strong> Peek in your <strong>spam</strong> or <strong>promotions</strong> folder — it likes to hide there.</div></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
     </div>`;return;
   }
-  const identity=`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span></div>`;
+  const identity=S.editingName
+    ?`<div class="auth-status editing"><span class="auth-edit">✓ <input type="text" id="auth-name-input" class="auth-name-input" maxlength="80" autocomplete="nickname" placeholder="Your name or handle" aria-label="Your name or handle" value="${esc(S.nameDraft)}" oninput="S.nameDraft=this.value" onkeydown="if(event.key==='Enter')saveNameEdit();else if(event.key==='Escape')cancelNameEdit();"><button type="button" class="raw-toggle" onclick="saveNameEdit()" ${S.nameBusy?'disabled':''}>${S.nameBusy?'Saving…':'Save'}</button><button type="button" class="raw-toggle" onclick="cancelNameEdit()" aria-label="Cancel" title="Cancel">✕</button></span></div>`
+    :`<div class="auth-status"><span>✓ Verified participant · <button type="button" class="auth-name" onclick="startNameEdit()" title="Click to edit your name" aria-label="${S.participantName?`Your name is ${esc(S.participantName)}. Click to edit`:'Add your name'}">${S.participantName?`<strong>${esc(S.participantName)}</strong>`:'<strong>Add your name</strong>'}<i class="ti ti-pencil" aria-hidden="true"></i></button></span></div>`;
   m.innerHTML=`${identity}<div id="wz-root"></div>`;
   renderWizard(document.getElementById('wz-root'));
 }

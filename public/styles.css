@@ -379,3 +379,14 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .wz-popup h3{font-size:17px;margin:0 0 6px}.wz-popup p{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.5}
 .wz-popup-actions{display:flex;flex-direction:column;gap:8px}.wz-popup-actions .btn{width:100%}
 .btn-ghost.danger{color:var(--contested)}
+
+/* the name in the green "Verified" box is clickable (looks like bold text with a small pencil, no extra height) */
+.auth-status{min-height:44px}
+.auth-name{display:inline-flex;align-items:center;gap:5px;background:0;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer}
+.auth-name strong{text-decoration:underline dotted;text-underline-offset:3px;text-decoration-thickness:1px}
+.auth-name .ti{font-size:14px;opacity:.85}.auth-name:hover strong,.auth-name:focus-visible strong{text-decoration-style:solid}
+.auth-name:focus-visible{outline:2px solid var(--commons);outline-offset:3px;border-radius:4px}
+.auth-edit{display:flex;align-items:center;gap:8px}
+.auth-status .auth-name-input{flex:none;min-width:0;font-family:var(--font);font-size:13px;line-height:1.3;padding:2px 8px;outline:0;border-radius:6px;border:1px solid var(--commons);background:var(--surface);color:var(--text);width:min(170px,42vw)}
+.auth-status.editing .raw-toggle{margin:0}
+.auth-status .auth-name-input:focus{border-color:var(--commons);box-shadow:0 0 0 2px #6ec97c40}
