@@ -87,14 +87,14 @@ await p.screenshot({ path: 'screens/shot-synth-attrib.png', fullPage: true });
 
 // what the model was actually asked
 const log = await (await fetch(B + '/__log')).json();
-const prompt = log.filter((x) => x.anthropic).pop().anthropic.messages[0].content;
+const prompt = log.filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('prompt uses only run-local participant/source labels', prompt.includes('RUN-LOCAL PARTICIPANTS: Participant A | Participant B | Participant C | Participant D') && prompt.includes('Participant D source 1 (anonymous)'));
 check('two anonymous contributions share one run-local participant source', (prompt.match(/source="Participant D source 1 \(anonymous\)"/g)||[]).length===2);
 check('no auth UUID, legacy uid, email, or public names sent to model', !prompt.includes(stranger) && !/uid|@example\.com|Persona 2|Persona 3/.test(prompt));
 check('four distinct people despite five contributions', prompt.includes('5 contributions from 4 distinct participants'), prompt.match(/\d contributions from \d distinct participants/)[0]);
 
 // ---------------- version history
-const llmCalls = async () => (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config).length;
+const llmCalls = async () => (await (await fetch(B + "/__log")).json()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).length;   // synthesis calls only (not fact-checks)
 const versions = async () => (await (await fetch(B + '/__db')).json()).synthesisVersions;
 const runApi = async (body = { includeTests: true }) => (await fetch(B + '/api/synthesize', { method: 'POST', headers: { cookie: await adminCookie(B), 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
 const statusApi = async (q = '?includeTests=1') => (await fetch(B + '/api/synthesize' + q)).json();
@@ -144,7 +144,7 @@ await fetch(B + '/__synth?m=full');
 const all = await versions();
 check('second run with new material creates v2 from ALL 7 contributions (not from v1)', sparse.version === 2 && sparse.unchanged === false && all.length === 2 && all[1].submission_ids.length === 7 && all[1].voice_keys.length === 5 && all[1].voice_count === 5 && (await llmCalls()) === callsBefore + 1);
 check('v1 is untouched by the second run', JSON.stringify(all[0]) === JSON.stringify(v1));
-const lastPrompt = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config).pop().anthropic.messages[0].content;
+const lastPrompt = (await (await fetch(B + "/__log")).json()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('v2 prompt carries the underlying contributions, not the previous synthesis', lastPrompt.includes('7 contributions from 5 distinct participants') && lastPrompt.includes('newcomer thought') && !lastPrompt.includes('Consent vs practicality'));
 check('old single-row table mirrors the latest version', (await (await fetch(B + '/__db')).json()).synthesis.count === 5);
 const dupe = await fetch(B + '/supabase/rest/v1/synthesis_versions', { method: 'POST', headers: { apikey: 'service-test', 'content-type': 'application/json' }, body: JSON.stringify({ version: 2 }) });
@@ -174,6 +174,26 @@ await p.click('#acc-syn-commons-OldC .syn-phead'); await p.click('#acc-syn-conte
 check('legacy commons: bar from the strength label, pill counts people from the old voices list, summary shown', (await p.locator('#acc-syn-commons-OldC .syn-meter i').evaluate((e) => e.style.width)) === '85%' && (await p.locator('#acc-syn-commons-OldC .sugg-count').innerText()) === '(3)' && (await p.locator('#acc-syn-commons-OldC .syn-pts li').first().innerText()).includes('Old summary'));
 check('legacy gaps (no pillarId, no suggestions) show just the note', (await p.locator('#acc-syn-gaps-OldG .syn-arrows').count()) === 0 && (await p.locator('#acc-syn-gaps-OldG .syn-note').innerText()) === 'old note');
 check('legacy string positions render as Position N and there is no spectrum', (await p.locator('#acc-syn-contested-Old .syn-pts li .syn-by').first().innerText()) === '— Position 1' && (await p.locator('#acc-syn-contested-Old .syn-pts li').first().innerText()).includes('A view') && (await p.locator('#acc-syn-contested-Old .spec-track').count()) === 0);
+
+// fact-check: the synthesis runs on Opus (medium), then Sonnet (high) checks each credited source against its own words
+const logBefore = (await (await fetch(B + '/__log')).json()).length;
+await fetch(B + '/__synth?m=ok'); await fetch(B + '/__check?reject=' + encodeURIComponent('No deepfakes'));
+await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'fact-check material', summary: 's', auto_tagged: false, is_test: false, participant_id: stranger, uid: null, display_name: '' });
+const fc = await runApi();
+const calls = (await (await fetch(B + '/__log')).json()).slice(logBefore).filter((x) => x.anthropic?.output_config).map((x) => x.anthropic);
+const synCall = calls.find((c) => c.output_config.format.schema.properties.commons), checkCalls = calls.filter((c) => c.output_config.format.schema.properties.results);
+check('synthesis call uses Opus 5.5 at medium effort', synCall?.model === 'claude-opus-5-5' && synCall.output_config.effort === 'medium');
+check('fact-check: one Sonnet 5.5 call per credited source, at high effort', checkCalls.length >= 2 && checkCalls.every((c) => c.model === 'claude-sonnet-5-5' && c.output_config.effort === 'high'));
+check('fact-check prompts hold one source\'s own words and the statements, never run-local labels', checkCalls.every((c) => { const t = c.messages[0].content; return t.includes('<contribution>') && t.includes('<statement id="1"') && !/Participant [A-Z]+ source|Source \d+ \(/.test(t); }));
+const deep = fc.commons?.[0]?.points?.find((x) => x.point.startsWith('No deepfakes'));
+const discl = fc.commons?.[0]?.points?.find((x) => x.point.includes('disclosure'));
+check('unsupported credits are removed, the point itself stays', !!deep && deep.voices.length === 0 && discl.voices.length > 0);
+check('fact-check result reported: credits checked and removed', fc.factCheck?.removed >= 2 && fc.factCheck.checked > fc.factCheck.removed && fc.factCheck.failed === 0, JSON.stringify(fc.factCheck));
+await fetch(B + '/__check?m=fail');
+await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'more fact-check material', summary: 's', auto_tagged: false, is_test: false, participant_id: stranger, uid: null, display_name: '' });
+const fc2 = await runApi();
+check('a failing fact-check never breaks the synthesis: version saved, credits kept', Number.isInteger(fc2.version) && fc2.factCheck?.failed > 0 && fc2.factCheck.removed === 0 && fc2.commons[0].points.find((x) => x.point.startsWith('No deepfakes')).voices.length > 0, JSON.stringify(fc2.factCheck));
+await fetch(B + '/__check');
 
 // a version made with the original 12 pillars keeps its own names, emojis and "/ 12"
 await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 98, timestamp: Date.now(), count: 2, submissionCount: 2 }, ...S.synVersions]; S.synView = null;

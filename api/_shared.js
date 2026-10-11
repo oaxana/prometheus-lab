@@ -3,7 +3,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
-export const MODEL = 'claude-sonnet-5-5';
+export const MODEL = 'claude-sonnet-5-5';      // summaries, pillar mapping, and the synthesis fact-check
+export const SYNTH_MODEL = 'claude-opus-5-5';  // the synthesis itself (owner's choice 2026-10-11: better at tracking who said what)
 
 // Server-side copy of the pillar names (ids + names only). Keep in sync with public/pillars.js.
 export const PILLARS = [

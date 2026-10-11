@@ -31,7 +31,7 @@ const cookie = await adminCookie(B);
 const run = async () => (await post('/api/synthesize', {}, { cookie })).json();
 const r1 = await run();
 const log = await (await fetch(B + '/__log')).json();
-const prompt = log.filter((x) => x.anthropic?.output_config).pop().anthropic.messages[0].content;
+const prompt = log.filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('v1 is built from 6 contributions by 5 distinct participants', r1.version === 1 && r1.count === 5 && r1.submissionCount === 6 && prompt.includes('6 contributions from 5 distinct participants'), prompt.match(/\d+ contributions from \d+ distinct participants/)?.[0]);
 check('v1 counts 4 sources: the transcript once, each document once', r1.sourceCount === 4, String(r1.sourceCount));
 check('the co-authored document lists both authors as its participants', /participant="Participant [A-Z] \| Participant [A-Z]" source="Source \d \(document\)"/.test(prompt));
@@ -66,13 +66,13 @@ check('Voices cards name a person by their current name, not the label saved at 
 const s4 = await (await fetch(B + '/api/synthesize')).json();
 check('4 contributions (2 named, 2 anonymous) from one account = 1 new voice', s4.pending.contributions === 4 && s4.pending.voices === 1 && s4.pending.newVoices === 1);
 const r3 = await run();
-const p3 = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config).pop().anthropic.messages[0].content;
+const p3 = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('synthesis: one run-local participant for all four, and the personal-chat rule is in the prompt', r3.count === 7 && p3.includes('Ignore small talk, greetings, meeting logistics') && p3.includes('Quote only statements about AI'));
 
 // Summaries: personal-chat rule + up to 15,000 characters per text
 const long = 'x'.repeat(14000) + 'END-MARKER';
 await post('/api/summarize', { text: long, selectedPillars: [1] });
-const sum = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic && !x.anthropic.output_config?.format?.schema?.properties?.commons).pop().anthropic;
+const sum = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic && !x.anthropic.output_config?.format?.schema?.properties?.commons && !x.anthropic.output_config?.format?.schema?.properties?.results).pop().anthropic;
 check('summaries get the personal-chat rule and read past the old 8,000-character cap', String(sum.system).includes('Ignore small talk') && JSON.stringify(sum.messages).includes('END-MARKER'));
 
 console.log(`\n${pass}/${total} passed`);

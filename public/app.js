@@ -672,7 +672,8 @@ async function runSynthesis(){
     const r=await api('/api/synthesize',{includeTests:S.synthIncludeTests});
     S.synthesizing=false;S.synView=null;S.synStatusKey='';   // show the latest, re-check pending material
     await refresh();render();
-    showToast(r.unchanged?`Nothing new since Version ${r.version}, so no new synthesis was needed`:`Version ${r.version} created`);
+    const fc=r.factCheck,fixed=fc?.removed?` · fact-check removed ${fc.removed} unsupported credit${fc.removed===1?'':'s'}`:'';
+    showToast(r.unchanged?`Nothing new since Version ${r.version}, so no new synthesis was needed`:`Version ${r.version} created${fixed}`);
   }catch(e){
     S.synthesizing=false;
     if(e.status===401){adminEnded();alert('Your admin session has ended. Log in again from the Admin link at the bottom of Home.');}

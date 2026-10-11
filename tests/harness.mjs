@@ -44,6 +44,8 @@ let synthMode = 'full'; // 'full' | 'sparse' (sparse: out-of-range numbers, empt
 let mapIdeas = ['AI-free quiet hours at every camp']; // what the fake model reports as "new ideas" (set with /__idea?v=a|b)
 export const log = [];
 let anthropicMode = 'ok'; // 'ok' | 'reject-attachments' | 'refusal'
+let checkReject = ''; // fake fact-check: statements containing this text are "not supported" ('' = all supported)
+let checkMode = 'ok'; // 'ok' | 'fail' (fact-check calls error out)
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const readBody = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => r(b)); });
@@ -90,6 +92,11 @@ async function fakeAnthropic(req, res, body) {
       { point: `No deepfakes, says ${shortD}.`, voices: [a, d] }] }],
     contested: [{ pillarId: 1, spectrum: { left: 'Strict opt-in', right: 'Signage + opt-out' }, positions: [{ stance: 'Strict opt-in', value: 10, voices: [c] }, { stance: 'Signage + opt-out', value: 80, voices: [a, bb] }], tension: 'Consent vs practicality' }],
     gaps: [{ pillarId: 7, note: 'Nobody spoke to <i>environment</i>.', suggestions: ['Digital <b>MOOP</b> rules', 'Energy budgets for AI on playa'] }, { pillarId: 2, note: 'Coexistence is unaddressed.', suggestions: [] }] };
+  }
+  else if (props.results) {
+    if (checkMode === 'fail') return json(res, 500, { type: 'error', error: { type: 'api_error', message: 'check boom' } });
+    const statements = [...b.messages[0].content.matchAll(/<statement id="(\d+)"[^>]*>([^<]*)<\/statement>/g)];
+    out = { results: statements.map((m) => ({ id: Number(m[1]), supported: !(checkReject && m[2].includes(checkReject)) })) };
   }
   else if (props.pillars) out = { pillars: [3, 1, 99, 3], summary: 'A short summary.' };
   else out = { summary: 'A short summary.' };
@@ -358,6 +365,7 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__metrics') { metricsMode = url.searchParams.get('m'); return json(res, 200, { metricsMode }); }
     // Gives the latest saved version's first finding another pillar name (e.g. one of the original 12) and back.
     if (url.pathname === '/__pillarname') { const v = db.synthesisVersions.at(-1); v.commons[0].pillar = url.searchParams.get('v'); return json(res, 200, { pillar: v.commons[0].pillar }); }
+    if (url.pathname === '/__check') { checkReject = url.searchParams.get('reject') || ''; checkMode = url.searchParams.get('m') || 'ok'; return json(res, 200, { checkReject, checkMode }); }
     if (url.pathname === '/__synth') { synthMode = url.searchParams.get('m'); return json(res, 200, { synthMode }); }
     if (url.pathname === '/__idea') { mapIdeas = (url.searchParams.get('v') || '').split('|').filter(Boolean); return json(res, 200, { mapIdeas }); }
     if (url.pathname === '/__map') { mapMode = url.searchParams.get('m'); return json(res, 200, { mapMode }); }

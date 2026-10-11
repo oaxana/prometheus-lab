@@ -199,7 +199,7 @@ check('discovery follows the flags (anonymous + test) and keeps its audio', disc
 check('history now lists both submissions, newest first, with "something else" shown', (await p.locator('.wz-hrow').count()) === 2 && (await p.locator('.wz-hrow').first().innerText()).includes('Something else entirely') && (await p.locator('.wz-hrow .test-badge').count()) === 1);
 // the synthesis prompt tells the model this one fits no pillar
 const syn = await fetch(B + '/api/synthesize', { method: 'POST', headers: { cookie: await adminCookie(B), 'content-type': 'application/json' }, body: JSON.stringify({ includeTests: true }) });
-const synPrompt = (await log()).filter((x) => x.anthropic).pop().anthropic.messages[0].content;
+const synPrompt = (await log()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('synthesis prompt marks the row as fitting no draft pillar', syn.status === 200 && synPrompt.includes('none (the author says this fits no draft pillar)'));
 
 // ---------------- Mapping failure falls back to the plain grid
