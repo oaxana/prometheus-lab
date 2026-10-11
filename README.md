@@ -289,7 +289,7 @@ npm test                    # all 20 suites, ~3 min   (npm test -- synthesis  ru
 
 ## Project status / where we left off
 
-*Last updated: 2026-10-06.*
+*Last updated: 2026-10-06. For the current state (8 pillars, Opus synthesis + fact-check, click-to-edit name, phone fixes, edits-as-new-material) see `CLAUDE.md` → "Where we left off (2026-10-11, end of day)"; this section is history.*
 
 **Configured and verified in live Supabase:** the Resend sending domain is verified; the signed `send-email` Edge Function is deployed; all three function secrets are present; the Send Email Hook is active; and real six-digit OTPs are delivered and verify successfully. Supabase Auth also has the production Site URL, redirect URLs, 60-second per-user resend cooldown, one-hour expiry, email confirmations, six-digit OTP length, and a project-level Auth email limit of 60 per hour configured.
 
