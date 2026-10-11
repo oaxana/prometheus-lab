@@ -68,7 +68,7 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 
 - **Frontend:** no framework and no build step. `public/app.js` renders everything with template strings; the Submit tab's wizard lives in `public/wizard.js` (loaded first; it uses `app.js` helpers at call time). File parsing happens in the browser (`mammoth` for .docx, `pdf.js` for .pdf, `JSZip` for .pptx). Icons are Tabler (CDN webfont, pinned version in `index.html`).
 - **Voice transcription** uses the browser's own speech service (`SpeechRecognition`: Google in Chrome, Apple in Safari; unavailable in Firefox). It is free and needs no new key, but the audio may pass through that vendor, and quality varies. The transcript is always editable and is what gets summarized; the audio is stored privately next to it.
-- **AI:** both Claude calls use **`claude-sonnet-5-5`** (one constant, `MODEL` in `api/_shared.js`). Summaries run at `low` effort, synthesis at `medium`. Both use structured JSON output, so the reply is always valid JSON.
+- **AI:** summaries and pillar mapping use **`claude-sonnet-5-5`** (`MODEL` in `api/_shared.js`, `low` effort). The synthesis uses **`claude-opus-5-5`** (`SYNTH_MODEL`, `medium` effort), followed by a **fact-check**: for each credited person, Opus reads only that person's own words and the points credited to them, and removes any credit their words don't support (the point itself stays). One run costs roughly $0.50 and takes about 1.5 minutes. `scripts/trial-synthesis.mjs` tries a run on the real data without saving it. All calls use structured JSON output, so the reply is always valid JSON.
 - **Live updates:** the page re-fetches every 20 seconds and when you return to the tab (no websockets).
 
 ## Repository map
