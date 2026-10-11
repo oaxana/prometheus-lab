@@ -18,4 +18,23 @@ check('does not invent speakers when no labels exist', unknown.length === 1 && u
 const note = split('Note: this was copied from a workshop.\nParticipant A: Consent first.');
 check('does not mistake a generic Note prefix for a person', note.some((v) => v.label === 'Participant A') && !note.some((v) => v.label === 'Note'));
 
+// Meeting-tool markdown export: bold names, timestamps, a header block; names cleaned to the person's name.
+const md = split(`# Constitution workshop
+
+**Meeting Date:** 1st Oct, 2026 - 2:38 AM
+
+---
+
+**jordan lee** *[10:23]*: Hey, Mia.
+**Robin O'Hara - Example Studio Productions** *[12:19]*: Yeah.
+**Casey M Park** *[13:01]*: Consent matters.
+**Jordan Lee** *[13:05]*: Agreed.`);
+check('meeting-tool export: one voice per person, header lines are not voices', md.map((v) => v.label).join('|') === "Jordan Lee|Robin O'Hara|Casey Park" && md.every((v) => v.detected) && !md.some((v) => /Meeting Date|Constitution workshop/.test(v.content)));
+check('meeting-tool export: lowercase and capitalised spellings of one name merge', md[0].content === 'Hey, Mia.\nAgreed.');
+const names = split('[00:01:02] jane DOE: hello\n00:02 Dr. Mary Ann Smith-Jones (Acme Inc): second\nTaylor Wong [10:23]: one\nsam | Org: three\nAvery, Facilitator: four\n[00:03] JANE DOE: again');
+check('names: timestamps, titles, companies and initials removed; real multi-part names kept', names.map((v) => v.label).join('|') === 'Jane Doe|Mary Ann Smith-Jones|Taylor Wong|Sam|Avery' && names[0].content === 'hello\nagain');
+const plain = split("Robin O'Hara - Example Studio Productions: Yeah.\nMia Stone — I agree\nQuestion: is that fine?\nSo here is the thing that I keep thinking about: privacy.");
+check('a colon beats a dash; "Question:" and long sentences are not speakers', plain.map((v) => v.label).join('|') === "Robin O'Hara|Mia Stone" && plain[1].content.includes('Question: is that fine?'));
+check('"Participant A" stays exactly that', split('Participant A: hi\nParticipant B: yo').map((v) => v.label).join('|') === 'Participant A|Participant B');
+
 console.log(`\n${pass}/${total} passed`);

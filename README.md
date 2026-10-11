@@ -33,12 +33,12 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 - **Password gate** on the landing page; nothing is reachable without it.
 - **Five tabs:** Home (landing page with live counts), Pillars, Submit, Voices, Synthesis. Pillars, Voices and Synthesis stay locked (dimmed, lock icon, gentle message) until the signed-in participant has one non-test contribution; the project lead is never locked out.
 - **Pillars:** the 12 constitutional pillars with expandable sub-topics.
-- **Submit** through an eight-step wizard (see below): settings → blank-slate topics → AI pillar mapping → format → the contribution → label → review → confirmation + your history. A contribution can be **typed**, **recorded** (voice note, transcribed in the browser; the recording is kept), or **uploaded**: `.pdf` (scanned PDFs are read by Claude), `.doc`/`.docx`, `.ppt`/`.pptx` (slide text in deck order plus speaker notes), images (`.png`/`.jpg`/`.gif`, read by Claude vision), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view"). Old binary `.doc`/`.ppt` files are stored but cannot be read in the browser, so the wizard asks for a short note instead.
+- **Submit** through a seven-step wizard: what you're contributing (my own thoughts / a conversation or transcript / a document or paper) → blank-slate topics (own thoughts only) → AI pillar mapping → format → the contribution (+ title for a transcript/document) → review → confirmation + your history. A transcript's speakers are detected from the text itself (meeting-tool exports like `**Name** *[10:23]*: …` work as-is), names are cleaned to the person's name, and the review step lists "Speakers found" before saving; each speaker becomes a separate voice. A contribution can be **typed**, **recorded** (voice note, transcribed in the browser; the recording is kept), or **uploaded**: `.pdf` (scanned PDFs are read by Claude), `.doc`/`.docx`, `.ppt`/`.pptx` (slide text in deck order plus speaker notes), images (`.png`/`.jpg`/`.gif`, read by Claude vision), plain text `.md`/`.txt` (read in the browser; the text itself is the stored original), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view"). Old binary `.doc`/`.ppt` files are stored but cannot be read in the browser, so the wizard asks for a short note instead.
 - **Pillars:** the wizard asks first what matters to *you* (before showing the draft pillars, to avoid anchoring), then Claude maps that answer onto the draft pillars and flags ideas that fit none. You can pick several pillars, "Not sure yet" (Claude picks), or "Something else entirely".
 - **Edit your past submissions** from the wizard's last step: your original text opens, and saving re-runs the AI summary.
 - **Verified participant, not an account workflow:** before a real contribution, enter an email and the Supabase one-time code. No password, username or onboarding. The normal Supabase session persists and refreshes on that browser.
 - **Anonymous by default**; optionally use one saved display name/handle. The email and Auth identity are never public and never sent to Claude.
-- **Voices:** a per-pillar coverage chart plus a card per submission showing the AI *summary*, tags and date. Auth ownership makes "yours", raw-text access, **mark/unmark as test**, and **delete** work after reload and on another device signed into the same email. Filters: "Show tests", "Mine only".
+- **Voices:** a per-pillar coverage chart plus a card per submission showing the AI *summary*, tags and date. Auth ownership makes "yours", raw-text access and **delete** work after reload and on another device signed into the same email. Filter: "Mine only". Test submissions are an **admin-only** tool: the test switch, "Show tests", "Mark as test" and test badges only appear while logged in as admin; everyone else never sees test rows.
 - **Synthesis:** a history of snapshots ("Collective Synthesis", v1, v2, …). Everyone sees the latest by default, can pick an older version from the dropdown (shown exactly as stored, never re-run), and sees how many contributions are waiting for the next synthesis.
 
 **For the project lead** (after logging in on the **Admin** page: muted link at the bottom of Home, or `/#admin`)
@@ -77,7 +77,7 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 public/                  static site (this folder is what Vercel serves)
   index.html             page shell; loads CDN libraries
   app.js                 the UI: render functions, file parsing helpers, Supabase + API calls
-  wizard.js              the eight-step submission wizard (state `W`, recorder, uploader, history/edit)
+  wizard.js              the seven-step submission wizard (state `W`, recorder, uploader, history/edit)
   styles.css             design tokens + styles (dark primary, fire-amber accent, light via prefers-color-scheme)
   pillars.js             the 12 pillars (names, emoji, sub-topics)
   config.js              Supabase URL + anon key (public by design)
@@ -173,7 +173,7 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 **Project lead (admin):**
 1. Home → scroll to the bottom → **Admin** (or open `/#admin`) → enter `ADMIN_PASSWORD` → **Log in**. The server checks it and sets an HttpOnly session cookie; you stay logged in until you close the browser or click **Log out of admin**.
 2. To browse without submitting, switch on **Unlock all tabs** (only affects you, for this browser session).
-3. Synthesis tab → optionally **Include test submissions** → **Run synthesis** (about 20–60 s; costs a few cents).
+3. Synthesis tab (as admin) → optionally **Include test submissions** → **Create new synthesis** (about 1–2 min; costs a few cents). It only appears when there is new material.
 
 **Testing without real people** (two ways):
 1. **Your verified participant:** submit real or test contributions as yourself. Named submissions always use your one saved display name; you cannot type a different identity per row.
@@ -182,7 +182,7 @@ npx vercel dev              # serves public/, api/ and the password gate at http
    delete from public.submissions where uid like 'demo-voter-%';
    ```
 
-**Keeping test data out of real results:** anything flagged *test* is excluded from synthesis and from the public counts unless "Include test submissions" is on. "Mark as test" is reversible; "Delete" is not. A previously saved synthesis is not updated until you run it again.
+**Keeping test data out of real results:** anything flagged *test* is excluded from synthesis and from the public counts unless "Include test submissions" is on. "Mark as test" is reversible; "Delete" is not. Saved synthesis versions never change; create a new version to include new material.
 
 ## Security and privacy model
 

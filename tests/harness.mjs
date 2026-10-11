@@ -353,6 +353,7 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__mode') { anthropicMode = url.searchParams.get('m'); return json(res, 200, { anthropicMode }); }
     if (url.pathname === '/__log') return json(res, 200, log);
     if (url.pathname === '/__db') return json(res, 200, db);
+    if (url.pathname === '/__wipeusers') { db.authUsers.clear(); return json(res, 200, {}); } // as a server restart does: saved logins become invalid
     if (url.pathname.startsWith('/anthropic/')) return fakeAnthropic(req, res, await readBody(req));
     if (url.pathname === '/__metrics') { metricsMode = url.searchParams.get('m'); return json(res, 200, { metricsMode }); }
     if (url.pathname === '/__synth') { synthMode = url.searchParams.get('m'); return json(res, 200, { synthMode }); }

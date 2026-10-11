@@ -133,9 +133,11 @@ function isLocked(v){return !!LOCKED_TABS[v]&&!(S.isAdmin&&S.unlockTabs)&&!hasCo
 function nav(v){
   if(isLocked(v)){document.querySelector('.toast')?.remove();showToast(LOCKED_TABS[v]);return;}
   if(v!=='submit')wzStopAllRec();                 // a recording never keeps running behind another tab
-  if(v==='submit'&&W.step===8)wzReset();          // coming back after a submission starts a fresh one
+  if(v==='submit'&&W.step===7)wzReset();          // coming back after a submission starts a fresh one
   S.view=v;render();window.scrollTo(0,0)}
-function filteredSubs(){let s=S.submissions;if(!S.showTests)s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(x=>x.mine);return s;}
+// Test submissions are an admin tool: everyone else never sees them, or any switch or wording about them.
+function showingTests(){return S.isAdmin&&S.showTests;}
+function filteredSubs(){let s=S.submissions;if(!showingTests())s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(x=>x.mine);return s;}
 function setupNeeded(m){m.innerHTML=`<div class="card"><h3>Setup needed</h3><p style="font-size:14px;color:var(--muted)">This app isn't connected to a database yet. Add your Supabase URL and anon key to <strong>public/config.js</strong>, then reload.</p></div>`;}
 
 function render(){
@@ -235,7 +237,7 @@ async function fetchSuggested(key){
 }
 // "Show tests" decides whether test people count; the Mine-only filter does not apply (the server never says who is who).
 function suggestedGroups(){
-  return (S.suggested||[]).map(g=>({idea:g.idea,people:g.people.filter(p=>S.showTests||!p.isTest)})).filter(g=>g.people.length)
+  return (S.suggested||[]).map(g=>({idea:g.idea,people:g.people.filter(p=>showingTests()||!p.isTest)})).filter(g=>g.people.length)
     .sort((a,b)=>b.people.length-a.people.length||a.idea.localeCompare(b.idea));
 }
 function renderSuggested(groups){
@@ -279,7 +281,7 @@ function renderVoices(m){
   const allReal=S.submissions.filter(s=>!s.isTest);
   const subs=filteredSubs();
   // Counts follow the active filters: tests only count while "Show tests" is on, and the header also follows "Mine only".
-  const visible=S.showTests?S.submissions:allReal;
+  const visible=showingTests()?S.submissions:allReal;
   const myCount=visible.filter(s=>s.mine).length;
   const scope=S.showMine?visible.filter(s=>s.mine):visible;
   const nReal=scope.filter(s=>!s.isTest).length,nTest=scope.length-nReal;
@@ -296,7 +298,9 @@ function renderVoices(m){
   const bars=PILLARS.map(p=>`<div class="bar-row"><div class="bar-label">${p.emoji} ${p.name}</div><div class="bar-track"><div class="bar-fill" style="width:${((counts[p.id]||0)/mx*100).toFixed(0)}%"></div></div><div class="bar-count">${counts[p.id]||0}</div></div>`).join('');
   const cards=subs.map(s=>{
     const pills=(s.pillars||[]).map(pid=>{const p=PILLARS.find(x=>x.id===pid);return p?`<span class="pill ${s.autoTagged?'auto':''}">${p.emoji} ${p.name}</span>`:''}).join('');
-    const who=s.voiceLabels?.length?s.voiceLabels.join(' + '):(s.displayName||'Anonymous'),when=s.timestamp?new Date(s.timestamp).toLocaleDateString():'';
+    // Transcript speakers / document authors are named by the source; a person's own contribution always shows
+    // their current saved name (renaming updates every earlier named contribution), or Anonymous.
+    const who=s.sourceType!=='individual'&&s.voiceLabels?.length?s.voiceLabels.join(' + '):(s.displayName||'Anonymous'),when=s.timestamp?new Date(s.timestamp).toLocaleDateString():'';
     const isMine=s.mine;
     const displayText=s.summary||'Summary pending...';
     const rawId='raw-'+s.id;
@@ -308,7 +312,7 @@ function renderVoices(m){
       const rawPreview=c.length>800?(c.slice(0,800)+'…'):c;
       const rawButton=c?`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button>`:'';
       const sourceLocked=s.sourceType&&s.sourceType!=='individual';
-      const testButton=sourceLocked?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
+      const testButton=sourceLocked||!S.isAdmin?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
       const rawContent=c?`<div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`:'';
       rawBlock=`${rawButton}${testButton}${sourceLocked?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button>`}${rawContent}`;
     }
@@ -319,7 +323,7 @@ function renderVoices(m){
   }).join('');
   m.innerHTML=`<h2>All Voices <span style="color:var(--accent)">(${nReal}${nTest?' + '+nTest+' test':''})</span></h2>
   <div class="filter-bar">
-    <div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}"></div><span>Show tests</span></div>
+    ${S.isAdmin?`<div class="toggle-row" onclick="S.showTests=!S.showTests;render()"><div class="toggle toggle-sm ${S.showTests?'on':''}"></div><span>Show tests</span></div>`:''}
     <div class="toggle-row" onclick="S.showMine=!S.showMine;render()"><div class="toggle toggle-sm ${S.showMine?'on':''}"></div><span>Mine only (${myCount})</span></div>
   </div><div class="card">${bars}</div>
   ${accordion('submissions','Submissions',subs.length,cards||'<p class="acc-empty">No submissions match these filters.</p>')}
@@ -581,6 +585,7 @@ async function readAttachment(file,ext){
       const data=await blobToBase64(file);
       if(b64Bytes(data)<=MAX_ATTACH_BYTES)out.ai={mediaType:'application/pdf',data};}
   }else if(ext==='pptx')out.text=await pptxToText(file);
+  else if(/^(md|markdown|txt)$/.test(ext))out.text=(await file.text()).trim();
   else if(ext==='docx')out.text=(await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()})).value.trim();
   return out;}
 // ---- PowerPoint (.pptx is a zip of XML): slide text in presentation order, plus speaker notes ----
@@ -618,7 +623,7 @@ async function setTestFlag(id,flag){
     if(error)throw error;
     if(!data){alert('Could not update — this submission is not yours, or it is gone.');await refresh();return;}
     await refresh();render();
-    showToast(flag?('Marked as test — left out of synthesis'+(S.showTests?'':' (turn on "Show tests" to see it)')):'Unmarked — included in synthesis');
+    showToast(flag?('Marked as test — left out of synthesis'+(showingTests()?'':' (turn on "Show tests" to see it)')):'Unmarked — included in synthesis');
   }catch(e){alert('Error: '+(e.message||'could not update'));}}
 async function deleteMine(id){
   if(!confirm('Delete this submission? This cannot be undone.'))return;

@@ -1,4 +1,4 @@
-import { launch, runWizard, openSubs } from './lib.mjs';
+import { launch, runWizard, openSubs, asAdmin } from './lib.mjs';
 
 
 const B = 'http://localhost:4173';
@@ -62,15 +62,14 @@ await page.reload();await page.click('nav button:has-text("Submit")');await page
 check('returning authenticated session remains usable', await page.locator('.auth-status:has-text("Verified participant")').isVisible());
 // Wizard step 1: the name box and the toggles survive re-renders; both toggles use the same amber
 await page.waitForSelector('#wz-start');
-await page.click('[data-fk=test]');   // anonymous is on by default; now test is on too
 const amber = async (k) => page.locator(`[data-fk=${k}] .wz-track`).evaluate((e) => getComputedStyle(e).backgroundColor);
-check('anonymous and test toggles share the same amber when on', (await amber('anon')) === 'rgb(239, 159, 39)' && (await amber('test')) === 'rgb(239, 159, 39)', await amber('anon') + ' / ' + await amber('test'));
-await page.click('[data-fk=test]');
+check('anonymous toggle is amber when on', (await amber('anon')) === 'rgb(239, 159, 39)', await amber('anon'));
+check('regular participant: no test switch or test wording on step 1', (await page.locator('[data-fk=test]').count()) === 0 && !/\btest/i.test(await page.locator('main').innerText()));
 await page.click('[data-fk=anon]');   // named submission
 check('"Get started" is blocked until a name is chosen', await page.locator('#wz-start').isDisabled());
 await page.fill('#display-name', 'Ember "<b>x</b>"');
 check('typing a name enables "Get started"', await page.locator('#wz-start').isEnabled());
-await page.click('[data-fk=test]'); await page.click('[data-fk=test]');   // re-render twice
+await page.click('[data-fk=anon]'); await page.click('[data-fk=anon]');   // re-render twice
 check('display name survives + quotes escaped', (await page.inputValue('#display-name')) === 'Ember "<b>x</b>"');
 await page.screenshot({ path: SHOTS + 'screens/shot-submit.png', fullPage: true });
 await runWizard(page, { text: 'AI should always disclose itself on playa.', choice: 'not_sure', resume: true });   // step 1 was set up by hand above
@@ -161,12 +160,19 @@ await page.click('.toggle-row:has-text("Mine only")');
 check('mine-only keeps own card', (await page.locator('.submission-card').count()) === 1);
 await page.screenshot({ path: SHOTS + 'screens/shot-voices.png', fullPage: true });
 
-// Test submission with one hand-picked pillar, then show/hide tests
+// Test submissions are admin-only: a regular participant sees no switch for them on Voices
+await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card');
+check('regular participant: no "Show tests" switch and no "Mark as test" button', (await page.locator('.toggle-row:has-text("Show tests")').count()) === 0 && (await page.locator('button:has-text("Mark as test")').count()) === 0);
+// As admin: a test submission with one hand-picked pillar, then show/hide tests
+await asAdmin(ctx, B); await page.reload(); await page.waitForSelector('.hero-cta'); await page.waitForFunction(() => S.isAdmin);
 await runWizard(page, { text: 'just testing', test: true, pillars: [5] });
 await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card');
 await page.click('.toggle-row:has-text("Show tests")');
 check('test card appears when "Show tests" on', (await page.locator('.test-card').count()) === 1);
 check('user-selected pillar kept & not auto-tagged', (await page.locator('.test-card .pill').count()) === 1 && (await page.locator('.test-card .pill.auto').count()) === 0);
+await ctx.clearCookies({ name: 'pl_admin' }); await page.reload(); await page.waitForSelector('.hero-cta');   // back to a regular participant
+await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card');
+check('after admin logout the test card is hidden again, even though "Show tests" was on', (await page.locator('.test-card').count()) === 0 && (await page.locator('.toggle-row:has-text("Show tests")').count()) === 0);
 
 const m = await (await fetch(B + '/api/metrics')).json();
 check('metrics API leaves out test rows and exposes only three counts', JSON.stringify(Object.keys(m).sort()) === '["contributions","pillarsCovered","voices"]' && m.contributions === 1 && m.voices === 1);

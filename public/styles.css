@@ -325,3 +325,4 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .syn-run-note{font-size:13px;color:var(--syn-muted)}
 @media(max-width:600px){.syn-versions{width:100%}.syn-page h2{font-size:28px}.syn-foot-r,.syn-create{width:100%;justify-content:center}}
 .wz-source-types{margin-bottom:16px}
+.wz-warn{color:var(--accent)}.wz-speakers{line-height:1.6}

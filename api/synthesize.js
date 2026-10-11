@@ -12,7 +12,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { MODEL, PILLAR_LIST, pillarName, HttpError, anthropic, send, readJson, parseJsonResponse, fail, requireAdmin } from './_shared.js';
 
-const MAX_VOICE_CHARS = 6000; // per submission; the prototype used 2000
+const MAX_VOICE_CHARS = 15000; // per submission (a long transcript speaker fits); the prototype used 2000
 
 const STRENGTHS = ['strong', 'moderate', 'emerging'];
 
@@ -399,7 +399,8 @@ Rules:
 - Never write participant/source labels inside the text of a point, stance, tension or note.
 - Every pillar goes in exactly one category. Be specific. Quote submissions where possible.
 - Cover every distinct substantive proposal or concern in the submissions somewhere in the result; never drop a point because few authors raised it.
-- List an author in "voices" only when their own contribution states or clearly implies that point or stance.`;
+- List an author in "voices" only when their own contribution states or clearly implies that point or stance.
+- Ignore small talk, greetings, meeting logistics, technical problems and personal-life details (health, visas or immigration, family, jobs, travel, money); they are not part of anyone's position and must never appear in your output. Quote only statements about AI, technology, community or the pillars.`;
 
     const msg = await anthropic()
       .messages.stream({

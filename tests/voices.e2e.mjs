@@ -1,9 +1,9 @@
 // Voices tab: filter-aware counts, "Show tests" toggle colour, collapsible sections, Suggested Pillars.
-import { launch, runWizard, openSubs } from './lib.mjs';
+import { launch, runWizard, openSubs, asAdmin } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch(); const errs = [];
-const mk = async () => { const pg = await (await b.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'dark' })).newPage(); pg.on('pageerror', (e) => errs.push(String(e))); return pg; };
+const mk = async (admin = false) => { const ctx = await b.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'dark' }); if (admin) await asAdmin(ctx, B); const pg = await ctx.newPage(); pg.on('pageerror', (e) => errs.push(String(e))); return pg; };
 const login = async (pg, email) => { await pg.goto(B); await pg.click('nav button:has-text("Submit")'); await pg.fill('#auth-email', email); await pg.click('button:has-text("Send code")'); await pg.fill('#auth-code', '123456'); await pg.click('button:has-text("Verify")'); await pg.waitForSelector('#wz-start'); };
 const idea = (v) => fetch(B + '/__idea?v=' + encodeURIComponent(v));
 const voices = async (pg) => { await pg.click('nav button:has-text("Voices")'); await pg.waitForSelector('.acc'); await pg.waitForFunction(() => !document.querySelector('#acc-suggested .acc-empty')?.textContent.includes('Loading')); };
@@ -12,7 +12,7 @@ const mine = async (pg) => (await pg.locator('.toggle-row:has-text("Mine only")'
 const bg = (pg, sel) => pg.locator(sel).evaluate((e) => getComputedStyle(e).backgroundColor);
 const settle = (pg) => pg.waitForTimeout(450);
 
-const p = await mk(); await login(p, 'ada@example.com');
+const p = await mk(true); await login(p, 'ada@example.com');   // Ada is the admin: test submissions are admin-only
 // 1. nothing suggested yet
 await idea(''); await runWizard(p, { text: 'First voice' }); await voices(p);
 check('empty state when nothing is suggested', await p.locator('#acc-suggested .acc-empty:has-text("No new pillars suggested yet.")').count() === 1);
@@ -29,6 +29,8 @@ await idea('Sacred Silence'); await runWizard(p, { text: 'Silent voice' });
 await idea('Test Only Idea'); await runWizard(p, { text: 'Test voice', test: true });
 const q = await mk(); await login(q, 'bob@example.com');
 await idea('rest and recovery spaces!'); await runWizard(q, { text: 'Bob voice' });
+await q.click('nav button:has-text("Voices")'); await q.waitForSelector('.submission-card'); await openSubs(q);
+check('Bob (not admin) sees no "Show tests", no test card, no "Mark as test"', (await q.locator('.toggle-row:has-text("Show tests")').count()) === 0 && (await q.locator('.test-card').count()) === 0 && (await q.locator('button:has-text("Mark as test")').count()) === 0);
 
 // 3. counts follow the filters (Ada: 3 real + 1 test; Bob: 1 real). Reload so Ada sees Bob's voice without waiting for the 20 s poll.
 await p.reload(); await p.waitForSelector('.hero-cta'); await voices(p); await openSubs(p);

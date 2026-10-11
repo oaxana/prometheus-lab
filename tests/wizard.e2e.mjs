@@ -1,11 +1,11 @@
 // The eight-step submission wizard, driven in a real browser against the fake backend.
 // Uses Chrome's fake microphone and a fake speech service, so recording + upload are exercised
 // but the quality of real transcription is NOT (that depends on the visitor's browser).
-import { launchWithMic, runWizard, FAKE_SPEECH, openSubs, adminCookie } from './lib.mjs';
+import { launchWithMic, runWizard, FAKE_SPEECH, openSubs, adminCookie, asAdmin } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launchWithMic();
-const mk = async (w = 420) => { const c = await b.newContext({ viewport: { width: w, height: 900 }, colorScheme: 'dark', permissions: ['microphone'] }); await c.addInitScript(FAKE_SPEECH); return c.newPage(); };
+const mk = async (w = 420, admin = false) => { const c = await b.newContext({ viewport: { width: w, height: 900 }, colorScheme: 'dark', permissions: ['microphone'] }); await c.addInitScript(FAKE_SPEECH); if (admin) await asAdmin(c, B); return c.newPage(); };
 const errs = [];
 // `expected` lists console errors this page is SUPPOSED to produce (the deliberate failure tests below).
 const watch = (pg, expected = []) => { pg.on('pageerror', (e) => errs.push(String(e))); pg.on('console', (m) => { if (m.type() === 'error' && !expected.some((x) => m.text().includes(x))) errs.push(m.text()); }); pg.on('dialog', (d) => d.accept()); };
@@ -21,13 +21,13 @@ const NEXT = '.wz-nav .btn-amber';
 const nextOn = (pg) => pg.locator(NEXT).isEnabled();
 const color = (pg, sel, prop = 'color') => pg.locator(sel).first().evaluate((e, p) => getComputedStyle(e)[p], prop);
 
-const p = await mk(); watch(p, ['status of 502', 'Pillar mapping:']);   // the mapping-failure test fakes a 502
+const p = await mk(420, true); watch(p, ['status of 502', 'Pillar mapping:']);   // the admin: only they see the test switch   // the mapping-failure test fakes a 502
 await verify(p, 'wiz@example.com');
 
 // ---------------- Step 1
 check('step 1 headline', (await p.locator('.wz-title').innerText()).startsWith('Share your thinking on how humans and AI should coexist.'));
 check('step 1 asks "What are you contributing?" with three source types, "My own thoughts" selected', (await p.locator('#wz-source-q').innerText()) === 'What are you contributing?' && (await p.locator('.wz-source-types .wz-card').allInnerTexts()).map((t) => t.trim()).join('|') === 'My own thoughts|A conversation or transcript|A document or paper' && (await p.locator('[data-fk=source-individual]').getAttribute('aria-pressed')) === 'true');
-check('stepper has 8 steps, first is active', (await p.locator('.wz-stepper li').count()) === 8 && (await p.locator('.wz-stepper li.active').count()) === 1 && (await step(p)) === 1);
+check('stepper has 7 steps, first is active', (await p.locator('.wz-stepper li').count()) === 7 && (await p.locator('.wz-stepper li.active').count()) === 1 && (await step(p)) === 1);
 check('no Back button on step 1', (await p.locator('.wz-nav .btn-ghost:has-text("Back")').count()) === 0);
 check('test helper text is shown', (await p.locator('.wz-help:has-text("Test submissions won’t be included in the final synthesis")').count()) === 1);
 check('both toggles are switches (keyboard/screen-reader friendly)', (await p.locator('[role=switch]').count()) === 2 && (await p.locator('[data-fk=anon]').getAttribute('aria-checked')) === 'true');
@@ -96,7 +96,7 @@ await p.unroute('**/api/map-pillars');
 await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("How do you want to add your thinking?")');
 check('step 4: three cards, Tabler icons (no emoji)', (await p.locator('.wz-cards .wz-card').count()) === 3 && (await p.locator('.wz-card .ti-pencil, .wz-card .ti-microphone, .wz-card .ti-upload').count()) === 3);
 check('step 4: card captions', (await p.locator('.wz-cards').innerText()).includes('Type out your thoughts') && (await p.locator('.wz-cards').innerText()).includes('Record a voice note') && (await p.locator('.wz-cards').innerText()).includes('Attach a file'));
-check('step 4: supported formats listed', (await p.locator('main').innerText()).includes('PDF, DOC, DOCX, PPT, PPTX, PNG, JPG, Google Docs, Google Slides'));
+check('step 4: supported formats listed', (await p.locator('main').innerText()).includes('PDF, DOC, DOCX, PPT, PPTX, MD, TXT, PNG, JPG, Google Docs, Google Slides'));
 check('step 4: gated until a format is picked', !(await nextOn(p)));
 const tops = await p.locator('.wz-cards .wz-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
 check('step 4: cards stack on mobile', tops[0] < tops[1] && tops[1] < tops[2]);
@@ -125,33 +125,22 @@ check('re-recording clears the old transcript box while live', (await p.inputVal
 await p.waitForTimeout(700); await p.click('.wz-rec-btn'); await p.waitForSelector('audio.wz-audio');
 await p.fill('#transcript-r', 'Quiet hours matter at every camp.');
 
-// ---------------- Step 6
-await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("What kind of contribution is this?")');
-check('step 6: optional, button says Skip', (await p.locator(NEXT).innerText()) === 'Skip' && (await nextOn(p)));
-check('step 6: placeholder example', (await p.locator('#contrib-type').getAttribute('placeholder')).startsWith('e.g. concern / principle suggestion / story from playa'));
-check('step 6: six chips', (await p.locator('.wz-chip').allInnerTexts()).join('|') === 'Principle suggestion|Concern or worry|Story from the playa|Pilot idea to test|General observation|Question for the group');
-await p.click('.wz-chip:has-text("Pilot idea to test")');
-check('chip fills the input, still editable, button becomes Next', (await p.inputValue('#contrib-type')) === 'Pilot idea to test' && (await p.locator(NEXT).innerText()) === 'Next');
-await p.fill('#contrib-type', 'Pilot idea to test: quiet hours');
-
-// ---------------- Step 7 (review + jump-back edits)
+// ---------------- Step 6 (review + jump-back edits): there is no "type of contribution" step any more
 await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and submit")');
+check('step 5 goes straight to review (no label step)', (await step(p)) === 6 && (await p.locator('#contrib-type, .wz-chip').count()) === 0);
 const block = (t) => p.locator(`.wz-review:has(h3:has-text("${t}"))`);
-check('review: four blocks each with Edit', (await p.locator('.wz-review .raw-toggle:has-text("Edit")').count()) === 4);
-check('review: pillars, format, audio player, label', (await block('Pillars').innerText()).includes('Access, Equity') && (await block('Format').innerText()).includes('Voice recording') && (await block('Your submission').locator('audio').count()) === 1 && (await block('Type of contribution').innerText()).includes('Pilot idea to test: quiet hours'));
+check('review: three blocks each with Edit, no "Type of contribution"', (await p.locator('.wz-review .raw-toggle:has-text("Edit")').count()) === 3 && (await block('Type of contribution').count()) === 0);
+check('review: pillars, format, audio player', (await block('Pillars').innerText()).includes('Access, Equity') && (await block('Format').innerText()).includes('Voice recording') && (await block('Your submission').locator('audio').count()) === 1);
 check('review: only the Anonymous badge (default) when test is off', (await p.locator('.wz-badge.solid').allTextContents()).join('|') === 'Anonymous');
 await block('Pillars').locator('.raw-toggle').click(); await p.waitForSelector('.wz-title:has-text("Here’s how your ideas connect")');
 check('Edit pillars jumps to step 3 with selections intact', (await step(p)) === 3 && (await grid(3).getAttribute('aria-pressed')) === 'true');
 await grid(7).click(); await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and submit")');
-check('Next after an edit returns straight to review', (await step(p)) === 7 && (await block('Pillars').innerText()).includes('Gifting'));
-check('other state preserved after the jump (transcript, label)', (await block('Type of contribution').innerText()).includes('quiet hours') && (await block('Your submission').innerText()).includes('Quiet hours matter at every camp.'));
-await block('Type of contribution').locator('.raw-toggle').click();
-check('Edit label jumps to step 6', (await step(p)) === 6 && (await p.inputValue('#contrib-type')).includes('quiet hours'));
-await p.click(NEXT);
+check('Next after an edit returns straight to review', (await step(p)) === 6 && (await block('Pillars').innerText()).includes('Gifting'));
+check('other state preserved after the jump (transcript)', (await block('Your submission').innerText()).includes('Quiet hours matter at every camp.'));
 await block('Format').locator('.raw-toggle').click(); await p.click('[data-fk=m-text]'); await p.click(NEXT);
 check('changing the format sends you through step 5 first', (await step(p)) === 5 && !(await nextOn(p)));
 await p.fill('#voice-text', 'Written instead: quiet hours matter.'); await p.click(NEXT);
-check('then straight back to review', (await step(p)) === 7 && (await block('Format').innerText()).includes('Written text'));
+check('then straight back to review', (await step(p)) === 6 && (await block('Format').innerText()).includes('Written text'));
 await block('Format').locator('.raw-toggle').click(); await p.click('[data-fk=m-voice]'); await p.click(NEXT);
 check('switching back finds the earlier recording still there', (await p.inputValue('#transcript-r')) === 'Quiet hours matter at every camp.');
 await p.click(NEXT);
@@ -159,7 +148,7 @@ await p.click(NEXT);
 // ---------------- Submit (voice)
 await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 state = await db(); const sub = state.submissions.at(-1);
-check('submission saved with mode, label and multiple pillars', sub.input_mode === 'voice' && sub.contribution_type === 'Pilot idea to test: quiet hours' && sub.pillars.join() === '1,3,7' && sub.pillar_choice === 'selected');
+check('submission saved with mode and multiple pillars, no label', sub.input_mode === 'voice' && sub.contribution_type === null && sub.pillars.join() === '1,3,7' && sub.pillar_choice === 'selected');
 check('transcript stored as the original text', sub.content === 'Quiet hours matter at every camp.');
 const audio = state.objects.find((o) => o.path === sub.audio_url);
 check('audio stored in the participant’s private folder, as audio/webm', !!audio && audio.path.startsWith(sub.participant_id + '/') && audio.type === 'audio/webm', audio?.type);
@@ -167,7 +156,7 @@ check('submission linked to its discovery input', sub.discovery_input_id === sta
 check('summary generated from the text', sub.summary === 'A short summary.');
 const call = (await log()).filter((x) => x.anthropic).pop().anthropic;
 const callText = JSON.stringify(call.messages[0].content);
-check('summary prompt carries pillars + label and does not re-tag', callText.includes('Gifting, Anti-Commodification') && callText.includes('quiet hours') && !callText.includes('Pick the 1–3 pillars'));
+check('summary prompt carries pillars and does not re-tag', callText.includes('Gifting, Anti-Commodification') && !callText.includes('Pick the 1–3 pillars'));
 
 // ---------------- Step 8
 check('confirmation headline + description', (await p.locator('.wz-confirm').innerText()).includes('Your voice is in the lab now') && (await p.locator('.wz-confirm').innerText()).includes('starting at Burning Man'));
@@ -177,7 +166,7 @@ check('no Back button on the confirmation', (await p.locator('.wz-nav .btn-ghost
 await p.screenshot({ path: 'screens/shot-wizard-8.png', fullPage: true });
 // edit: original text, re-run summary without re-tagging
 await p.click('.wz-hrow button:has-text("Edit")');
-check('Edit opens the ORIGINAL text for editing', (await p.inputValue('#edit-text')) === 'Quiet hours matter at every camp.' && (await p.inputValue('#edit-type')) === 'Pilot idea to test: quiet hours');
+check('Edit opens the ORIGINAL text for editing', (await p.inputValue('#edit-text')) === 'Quiet hours matter at every camp.' && (await p.locator('#edit-type').count()) === 0);
 await p.fill('#edit-text', 'Quiet hours matter, and camps should post them on a board.');
 const callsBefore = (await log()).filter((x) => x.anthropic).length;
 await p.click('button:has-text("Save changes")'); await p.waitForSelector('.wz-hrow:not(.editing)');
@@ -201,7 +190,7 @@ check('step 2 voice: transcript appears and unlocks Next', (await p.inputValue('
 await p.click(NEXT); await p.waitForSelector('.wz-pillars');
 await p.click('[data-fk=something_else]'); await p.click(NEXT); await p.click('[data-fk=m-text]'); await p.click(NEXT);
 check('step 5 hint for "something else"', (await p.locator('.wz-hint').innerText()).includes('something else entirely'));
-await p.fill('#voice-text', 'AI should never run the fire art.'); await p.click(NEXT); await p.click(NEXT);
+await p.fill('#voice-text', 'AI should never run the fire art.'); await p.click(NEXT);
 check('review badges: Anonymous + Test, same amber', (await p.locator('.wz-badge.solid').allTextContents()).join('|') === 'Anonymous|Test submission' && (await color(p, '.wz-badge.solid', 'backgroundColor')) === 'rgb(239, 159, 39)');
 await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 state = await db(); const sub2 = state.submissions.at(-1), disc2 = state.discovery.at(-1);

@@ -5,7 +5,7 @@
 // and flags ideas that fit none of them. The caller falls back to the plain pillar grid on any error.
 import { MODEL, PILLARS, PILLAR_LIST, anthropic, HttpError, send, readJson, parseJsonResponse, fail } from './_shared.js';
 
-const MAX_TEXT = 8000; // characters sent to the model (same cap as /api/summarize)
+const MAX_TEXT = 8000; // characters of the step-2 topic notes sent to the model
 const MAX_NEW_IDEAS = 6;
 
 const SYSTEM = `You are helping map freeform ideas about AI ethics and human-AI coexistence to a set of draft constitutional pillars for Burning Man.

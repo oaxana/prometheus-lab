@@ -20,7 +20,7 @@ await p.locator('.toast').waitFor({state:'detached'});
 await runWizard(p, { mode: 'upload', stopAt: 5 });
 check('drop zone lists the supported formats', (await p.locator('.drop-zone').innerText()).includes('PPTX'));
 const accept = await p.locator(input).getAttribute('accept');
-check('file input accepts every listed type', ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.png', '.jpg', '.jpeg', '.gif'].every((e) => accept.split(',').includes(e)), accept);
+check('file input accepts every listed type', ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.md', '.txt', '.png', '.jpg', '.jpeg', '.gif'].every((e) => accept.split(',').includes(e)), accept);
 check('Next is blocked until something is attached', !(await nextEnabled()));
 
 // ---- PowerPoint
@@ -34,7 +34,7 @@ check('legacy .ppt: Next blocked until the note is written', !(await nextEnabled
 await p.fill('#upload-note', 'Old deck about consent signage.');
 check('typing the note enables Next live', await nextEnabled());
 // ---- unsupported type
-await p.setInputFiles(input, { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('plain') });
+await p.setInputFiles(input, { name: 'notes.zip', mimeType: 'application/zip', buffer: Buffer.from('PK') });
 await p.waitForSelector('.toast:has-text("isn’t supported")');
 check('unsupported type -> toast, previous file kept', (await chip()).join() === 'legacy.ppt');
 // ---- Google Doc link replaces the file
@@ -65,8 +65,7 @@ check('a Google chip can be removed', (await chip()).length === 0);
 // ---- submit a real .pptx and inspect what Claude receives and what is stored
 await p.setInputFiles(input, 'fixtures/test.pptx'); await p.waitForSelector('.file-preview .wz-meta:not(:has-text("reading"))');
 await p.fill('#upload-note', 'My own words.');
-await p.click('.wz-nav .btn-amber'); await p.waitForSelector('.wz-stepcount:has-text("Step 6")');
-await p.click('.wz-nav .btn-amber'); await p.waitForSelector('.wz-stepcount:has-text("Step 7")');
+await p.click('.wz-nav .btn-amber'); await p.waitForSelector('.wz-stepcount:has-text("Step 6")');   // review
 check('review shows the filename', (await p.locator('.wz-review:has(h3:has-text("Your submission"))').innerText()).includes('test.pptx'));
 await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 const prompt = (await lastPrompt()).at(-1).text;
@@ -86,7 +85,7 @@ check('stored with the right content type', obj.type === 'application/vnd.openxm
 // ---- Google Doc submission: text goes to Claude, the link (not a storage path) is kept
 await runWizard(p, { mode: 'upload', stopAt: 5 });
 await p.fill('#gdoc-url', GOOD); await p.click('button:has-text("Add")'); await p.waitForSelector('.file-preview');
-await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
+await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 check('Google Doc text in prompt, with its title', (await lastPrompt()).at(-1).text.includes('[From: Doc: Camp Plan]') && (await lastPrompt()).at(-1).text.includes('GOOGLEDOC-MARKER'));
 state = await db(); row = state.submissions.at(-1);
 check('Google link kept as file_url, no file uploaded for it', row.file_url === GOOD && state.objects.length === 1);
@@ -95,7 +94,7 @@ check('Google link kept as file_url, no file uploaded for it', row.file_url === 
 await runWizard(p, { mode: 'upload', stopAt: 5 });
 await p.setInputFiles(input, { name: 'pic.png', mimeType: 'image/png', buffer: PNG }); await p.waitForSelector('.file-preview .wz-meta:not(:has-text("reading"))');
 check('readable image needs no note', await nextEnabled());
-await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
+await p.click('.wz-nav .btn-amber'); await p.click('.wz-nav .btn-amber:has-text("Submit")'); await p.waitForSelector('.wz-confirm');
 const content = await lastPrompt();
 check('image sent to Claude as an image block (jpeg)', content[0].type === 'image' && content[0].source.media_type === 'image/jpeg', content.map((c) => c.type).join(','));
 state = await db(); obj = state.objects.at(-1);

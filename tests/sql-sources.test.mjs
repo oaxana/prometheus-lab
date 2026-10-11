@@ -38,24 +38,24 @@ await asUser(db, ALICE);
 check('source tables cannot be read directly by a browser role', await blocked(() => db.query('select * from sources')));
 
 const authored = async (title, raw) => source({
-  type: 'document', title, raw, mode: 'upload', label: 'Paper', people: [{ label: "Aza O'Leary" }],
-  rows: [{ content: raw, summary: 'paper summary', pillars: [3], labels: ["Aza O'Leary"] }],
+  type: 'document', title, raw, mode: 'upload', label: 'Paper', people: [{ label: "Robin O'Hara" }],
+  rows: [{ content: raw, summary: 'paper summary', pillars: [3], labels: ["Robin O'Hara"] }],
 });
 const paper1 = await authored('Paper one', 'First paper source text.');
 const paper2 = await authored('Paper two', 'Second paper source text.');
 await asOwner(db);
-const aza = (await db.query(`select id, display_name from contributors where identity_key='author:aza o''leary'`)).rows;
+const aza = (await db.query(`select id, display_name from contributors where identity_key='author:robin o''hara'`)).rows;
 const azaLinks = (await db.query(`select sc.source_id, sc.contributor_id from source_contributors sc join sources src on src.id=sc.source_id where src.id in ($1,$2) and sc.contributor_role='author' order by sc.source_id`, [paper1, paper2])).rows;
-check('two explicitly attributed documents reuse one author contributor', aza.length === 1 && aza[0].display_name === "Aza O'Leary" && azaLinks.length === 2 && azaLinks.every((r) => r.contributor_id === aza[0].id));
+check('two explicitly attributed documents reuse one author contributor', aza.length === 1 && aza[0].display_name === "Robin O'Hara" && azaLinks.length === 2 && azaLinks.every((r) => r.contributor_id === aza[0].id));
 
 await asUser(db, ALICE);
 const coauthored = await source({
-  type: 'document', title: 'Co-authored note', raw: 'A joint source.', people: [{ label: "Aza O'Leary" }, { label: 'Rebecca Ray' }],
-  rows: [{ content: 'A joint source.', summary: 'joint', pillars: [4], labels: ["Aza O'Leary", 'Rebecca Ray'] }],
+  type: 'document', title: 'Co-authored note', raw: 'A joint source.', people: [{ label: "Robin O'Hara" }, { label: 'Dana Ray' }],
+  rows: [{ content: 'A joint source.', summary: 'joint', pillars: [4], labels: ["Robin O'Hara", 'Dana Ray'] }],
 });
 await asOwner(db);
 const coLinks = (await db.query(`select sc.source_label from submission_contributors jc join source_contributors sc on sc.id=jc.source_contributor_id join submissions s on s.id=jc.submission_id where s.source_id=$1 order by sc.source_label`, [coauthored])).rows;
-check('one co-authored document has one derived row with both authors', coLinks.map((r) => r.source_label).join('|') === "Aza O'Leary|Rebecca Ray");
+check('one co-authored document has one derived row with both authors', coLinks.map((r) => r.source_label).join('|') === "Dana Ray|Robin O'Hara");
 
 await asUser(db, ALICE);
 const transcriptRow = tRows[0].id;
