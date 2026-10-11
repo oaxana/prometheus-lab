@@ -127,7 +127,7 @@ const actx = await browser.newContext({ viewport: { width: 420, height: 900 } })
 const ap = await actx.newPage(); const aerr = []; ap.on('pageerror', (e) => aerr.push(String(e)));
 await ap.goto(B); await ap.waitForSelector('.hero-cta');
 check('admin link sits in the home footer, small and muted', await ap.locator('.admin-link-row .admin-link:has-text("Admin")').isVisible() && parseFloat(await ap.locator('.admin-link').evaluate((e) => getComputedStyle(e).fontSize)) <= 12 && parseFloat(await ap.locator('.admin-link').evaluate((e) => getComputedStyle(e).opacity)) < 1);
-await ap.click('.admin-link'); await ap.waitForSelector('#admin-password');
+await ap.click('.admin-link:has-text("Admin")'); await ap.waitForSelector('#admin-password');
 check('admin page asks for a password (masked); no controls before login', (await ap.locator('#admin-password').getAttribute('type')) === 'password' && (await ap.locator('.admin-control').count()) === 0);
 await ap.fill('#admin-password', 'wrong'); await ap.click('.admin-login button');
 await ap.waitForSelector('.admin-login .auth-error');
@@ -206,7 +206,7 @@ await page.click('nav button:has-text("Synthesis")');
 check('locked: no create button', (await page.locator('button:has-text("Create New Synthesis")').count()) === 0);
 check('locked: lead-only message', await page.locator('text=Only the project lead can create a synthesis.').isVisible());
 check('no admin button or link on the Synthesis page', (await page.locator('main button, main a').filter({ hasText: /unlock|admin|project lead/i }).count()) === 0);
-await page.click('nav button:has-text("Home")'); await page.click('.admin-link');
+await page.click('nav button:has-text("Home")'); await page.click('.admin-link:has-text("Admin")');
 await page.fill('#admin-password', 'letmein'); await page.click('.admin-login button'); await page.waitForSelector('.admin-control');
 await page.click('nav button:has-text("Synthesis")');
 await page.waitForSelector('button:has-text("Create New Synthesis")');
@@ -240,7 +240,8 @@ check('light mode bg is cream', (await lp.evaluate(() => getComputedStyle(docume
 check('dark mode bg is #0d0b14', (await page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === 'rgb(13, 11, 20)');
 
 // Explicit sign-out removes private ownership access on this browser.
-await page.click('nav button:has-text("Submit")');await page.click('button:has-text("Sign out / switch")');await page.waitForSelector('.verify-card');
+check('green box has no buttons any more (name and sign-out live elsewhere)', (await (async () => { await page.click('nav button:has-text("Submit")'); return page.locator('.auth-status button').count(); })()) === 0);
+await page.click('nav button:has-text("Home")');await page.click('.admin-link-row button:has-text("Sign out")');await page.click('nav button:has-text("Submit")');await page.waitForSelector('.verify-card');
 check('sign out returns to participant verification', await page.locator('.verify-card').isVisible());
 check('after sign-out the tabs lock again', (await page.locator('nav button.locked').count()) === 3);
 check('signed-out browser no longer receives private raw text', (await page.evaluate(() => S.submissions.every((x) => x.content === null && !x.mine))));

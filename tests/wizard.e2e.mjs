@@ -39,7 +39,7 @@ await p.screenshot({ path: 'screens/shot-wizard-1.png', fullPage: true });
 // ---------------- Step 2
 await p.click('[data-fk=anon]'); await p.click('#wz-start'); await p.waitForSelector('.wz-title:has-text("What topics matter most to you?")');
 check('stepper: step 1 done (blue), step 2 active (amber)', (await color(p, '.wz-stepper li.done', 'backgroundColor')) !== (await color(p, '.wz-stepper li:last-child', 'backgroundColor')) && (await color(p, '.wz-stepper li.active', 'backgroundColor')) === 'rgb(239, 159, 39)');
-check('step 2 asks the blank-slate question', (await p.locator('.subtitle').first().innerText()).includes('what are the most important topics to address as humans and AI begin to coexist?'));
+check('step 2 asks the blank-slate question', (await p.locator('.subtitle').first().innerText()) === 'In your own words, what matters most as humans and AI begin to coexist?');
 check('step 2 is gated before any input', !(await nextOn(p)));
 check('step 2 note: new wording, same font size as the sentence above, with a "skip this step" link', (await p.locator('.wz-skip-note').innerText()).startsWith('Your ideas will help shape our pillars and themes. You can add in-depth ideas and upload documents in the next step. You can also skip this step') && (await color(p, '.wz-skip-note', 'fontSize')) === (await color(p, '.subtitle', 'fontSize')) && (await p.locator('.wz-skip').innerText()) === 'skip this step');
 check('Write it / Say it cards', (await p.locator('.wz-cards .wz-card').allInnerTexts()).map((t) => t.trim()).join('|') === 'Write it|Say it');
@@ -302,6 +302,18 @@ check('user text is sent inside <input> tags, with a do-not-follow system prompt
   await pg.click('[data-fk=not_sure]'); check('"Not sure yet" unlocks Next', await nextOn(pg));
   await pg.click('.wz-nav .btn-ghost'); await pg.waitForSelector('.wz-skip');
   check('Back from step 3 returns to step 2', (await step(pg)) === 2);
+}
+// ---------------- changing your name later happens in step 1 (the green box no longer has an Edit name button)
+{
+  const pg = await mk(420); watch(pg);
+  await verify(pg, 'rename@example.com');
+  await runWizard(pg, { anonymous: false, name: 'Alpha Person', text: 'first thought' });
+  await pg.click('button:has-text("+ Submit another")'); await pg.waitForSelector('#wz-start');
+  check('step 1 prefills the saved name in an editable box, with a note about earlier contributions', (await pg.inputValue('#display-name')) === 'Alpha Person' && (await pg.locator('.wz-name .wz-help').innerText()).includes('earlier named contributions'));
+  await pg.fill('#display-name', 'Beta Person');
+  await runWizard(pg, { anonymous: false, resume: true, text: 'second thought' });
+  const named = (await db()).submissions.filter((x) => x.content === 'first thought' || x.content === 'second thought');
+  check('a name changed in step 1 is saved and also applied to the earlier named contribution', named.length === 2 && named.every((x) => x.display_name === 'Beta Person'), JSON.stringify(named.map((x) => x.display_name)));
 }
 check('no console/page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 console.log(`\n${pass}/${total} passed`); await b.close();

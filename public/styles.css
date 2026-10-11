@@ -153,6 +153,7 @@ input[type="text"]:focus,input[type="email"]:focus,input[type="password"]:focus{
 .wz-opt-text{display:flex;flex-direction:column;line-height:1.3}.wz-opt-title{font-size:14px;font-weight:600}.wz-opt-sub{font-size:12px;color:var(--muted)}
 /* selectable cards */
 .wz-cards{display:grid;gap:10px;grid-template-columns:1fr}
+.wz-cards.two{grid-template-columns:1fr 1fr}   /* Write it / Say it stay side by side on phones: keeps the Next button on screen */
 @media(min-width:520px){.wz-cards.two{grid-template-columns:1fr 1fr}.wz-cards.three{grid-template-columns:repeat(3,1fr)}}
 .wz-card{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:18px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-family:var(--font);cursor:pointer;transition:all .15s}
 .wz-card:hover{border-color:var(--amber)}.wz-card.selected{border:2px solid var(--amber);background:var(--amber-dim);padding:17px 11px}

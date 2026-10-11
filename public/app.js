@@ -117,12 +117,6 @@ async function saveParticipantName(name){
   if(error)throw error;
   S.participantName=data||clean;S.displayName=S.participantName;
 }
-async function editDisplayName(){
-  const name=prompt('Your display name or handle:',S.participantName||'');
-  if(name===null)return;
-  try{await saveParticipantName(name);await refresh();render();showToast('Display name saved');}
-  catch(e){alert('Error: '+(e.message||'could not save name'));}
-}
 // ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
 const LOCKED_TABS={pillars:'Share your own thinking first, then explore the pillars.',voices:'Share your voice first, then see what others have shared.',synthesis:'Share your voice first, then see where the group agrees, disagrees and has gaps.'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
@@ -188,7 +182,7 @@ function renderHome(m){
   <div class="card info-card trust-card"><div class="info-head"><i class="ti ti-shield-lock info-icon" aria-hidden="true"></i><h2 class="info-q">Built on trust</h2></div><p><strong class="trust-lead">Your email stays private.</strong> It only makes sure each voice counts once, and is never shown to anyone or sent to the AI. Your raw words stay yours; only AI summaries are shared with the group.</p></div>
   </div>
   <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>
-  <p class="admin-link-row"><button class="admin-link" onclick="nav('admin')">Admin</button></p>`;
+  <p class="admin-link-row">${S.session?`<button class="admin-link" onclick="signOutParticipant()">Sign out</button>`:''}<button class="admin-link" onclick="nav('admin')">Admin</button></p>`;
 }
 
 function renderPillars(m){
@@ -213,7 +207,7 @@ function renderSubmit(m){
       :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><div class="spam-nudge" role="note"><span class="spam-icon" aria-hidden="true">📬</span><div><strong>Code not showing up?</strong> Peek in your <strong>spam</strong> or <strong>promotions</strong> folder — it likes to hide there.</div></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
     </div>`;return;
   }
-  const identity=`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;
+  const identity=`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span></div>`;
   m.innerHTML=`${identity}<div id="wz-root"></div>`;
   renderWizard(document.getElementById('wz-root'));
 }

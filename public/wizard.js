@@ -67,7 +67,7 @@ async function wzNext(){
   wzGo(W.fromReview&&s!==4?6:s+1);
 }
 function wzValid(s){
-  if(s===1)return ['individual','transcript','document'].includes(W.sourceType)&&(W.sourceType!=='individual'||!!(W.anonymous||S.participantName||String(S.displayName||'').trim()));
+  if(s===1)return ['individual','transcript','document'].includes(W.sourceType)&&(W.sourceType!=='individual'||!!(W.anonymous||String(S.displayName||'').trim()));
   if(s===2)return (W.sourceType!=='individual'||!!wzDiscoveryText())&&!W.dRec.recording;
   if(s===3)return W.mapState!=='loading'&&(W.choice!=='selected'||W.pillars.size>0);
   if(s===4)return !!W.mode;
@@ -98,9 +98,7 @@ const wzSwitch=(on,label,help,fk,fn)=>`<button type="button" class="wz-setting" 
 
 function wzStep1(){
   const named=!W.anonymous;
-  const nameBit=!named?'':S.participantName
-    ?`<div class="wz-name">Your name will show as <strong>${esc(S.participantName)}</strong>. <button type="button" class="raw-toggle" onclick="editDisplayName()">Change</button></div>`
-    :`<div class="wz-name"><label for="display-name">Your name or handle</label><input type="text" id="display-name" maxlength="80" placeholder="Your name or handle" value="${esc(S.displayName)}" oninput="wzNameInput()"></div>`;
+  const nameBit=!named?'':`<div class="wz-name"><label for="display-name">Your name or handle</label><input type="text" id="display-name" maxlength="80" placeholder="Your name or handle" autocomplete="nickname" value="${esc(S.displayName)}" oninput="wzNameInput()">${S.participantName?'<span class="wz-help">Changing it also updates your earlier named contributions.</span>':''}</div>`;
   const sourceCards=`<h3 class="wz-label" id="wz-source-q">What are you contributing?</h3><div class="wz-cards three wz-source-types" role="group" aria-labelledby="wz-source-q">${wzModeCard(W.sourceType==='individual','user','My own thoughts','','wzSetSourceType(\'individual\')','source-individual')}${wzModeCard(W.sourceType==='transcript','messages','A conversation or transcript','','wzSetSourceType(\'transcript\')','source-transcript')}${wzModeCard(W.sourceType==='document','file-text','A document or paper','','wzSetSourceType(\'document\')','source-document')}</div>`;
   const opt=(on,icon,title,sub,fk,val)=>`<button type="button" class="wz-opt ${on?'selected':''}" aria-pressed="${on}" data-fk="${fk}" onclick="wzSetAnon(${val})"><i class="ti ti-${icon}" aria-hidden="true"></i><span class="wz-opt-text"><span class="wz-opt-title">${title}</span><span class="wz-opt-sub">${sub}</span></span></button>`;
   const identitySettings=W.sourceType==='individual'?`<div class="card wz-settings"><div class="wz-choice" role="group" aria-label="How should your contribution appear?">${opt(!W.anonymous,'user','With my name','Shown with your summary','anon-off','false')}${opt(W.anonymous,'eye-off','Anonymous','Your name stays hidden','anon','true')}</div>
@@ -145,7 +143,7 @@ function wzStep2(){
   const own=W.sourceType==='individual';
   const heading=own?'What topics matter most to you?':'What does this source address?';
   const copy=own
-    ?'Before we show you what we’re working with, we’d like to hear from you. In your own words, what are the most important topics to address as humans and AI begin to coexist?'
+    ?'In your own words, what matters most as humans and AI begin to coexist?'
     :'Optionally add a little context to help map this source to the draft pillars. This is uploader context, not another speaker or author.';
   const placeholder=own?'What principles, boundaries, or values matter most? What concerns you? What excites you?':'What should readers understand about this source?';
   const area=W.dMode==='text'
@@ -490,7 +488,7 @@ async function wzSubmit(){
       :[await wzAnalyze(analysisContent,attachments)];
     const contributions=analyzed.map((a,i)=>({...a,labels:speakers?[speakers[i].label]:(w.sourceType==='document'?authors:[])}));
     const wasTest=wzIsTest(w);
-    if(w.sourceType==='individual'&&!w.anonymous&&!S.participantName)await saveParticipantName(S.displayName);
+    if(w.sourceType==='individual'&&!w.anonymous&&String(S.displayName||'').trim()!==S.participantName)await saveParticipantName(S.displayName);   // first name, or a changed one
     const contributors=speakers?speakers.map(v=>({label:v.label,detected:v.detected})):authors.map(label=>({label}));
     const {error}=await sb.rpc('submit_source',{p_source_type:w.sourceType,p_source_title:w.sourceTitle.trim()||(w.sourceType==='individual'?'Individual contribution':''),p_raw_content:rawContent,
       p_source_created_at:null,p_audio_url:audioPath,p_file_url:filePath,p_file_name:fileName,p_input_mode:w.mode,p_contributors:contributors,p_contributions:contributions,

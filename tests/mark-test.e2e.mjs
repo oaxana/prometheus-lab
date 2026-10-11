@@ -10,7 +10,7 @@ await submit('voice A'); await submit('voice B');
 const heading = async () => (await p.locator('h2').first().innerText());
 check('regular participant: no "Mark as test" and no "Show tests"', (await p.locator('button:has-text("Mark as test")').count()) === 0 && (await p.locator('.toggle-row:has-text("Show tests")').count()) === 0);
 // Marking as test is an admin tool: log in on the Admin page, then come back
-await p.click('nav button:has-text("Home")'); await p.click('.admin-link');
+await p.click('nav button:has-text("Home")'); await p.click('.admin-link:has-text("Admin")');
 await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button'); await p.waitForSelector('.admin-control');
 await p.click('nav button:has-text("Voices")'); await p.waitForSelector('.submission-card'); await openSubs(p);
 check('starts with 2 real voices', (await heading()).includes('(2)'));

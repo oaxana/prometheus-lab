@@ -18,7 +18,7 @@ await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'ano
 
 // The project lead logs in on the Admin page and unlocks the tabs (no submission of their own)
 await p.goto(B); await p.waitForSelector('.hero-cta');
-await p.click('.admin-link'); await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button');
+await p.click('.admin-link:has-text("Admin")'); await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button');
 await p.waitForSelector('.admin-switch'); await p.click('.admin-switch');
 await nav('Synthesis');
 await p.click('.toggle-row:has-text("Include test submissions")');

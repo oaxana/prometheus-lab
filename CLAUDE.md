@@ -25,6 +25,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 
 **Mobile + name guard + delete (2026-10-11, uncommitted):** phone tab bar now fits all 5 tabs (icon over label under 520px; before, "Synthesis" was cut off); step 1 "Get started" is always tappable and `wzNeedName()` shows a pop-up (Enter my name / Go anonymous instead) when the name is missing, and `wzSubmit` sends people back to step 1 with the same pop-up instead of a raw error; the "Your submissions" history now has a Delete button (calls `deleteMine`) next to Edit.
 
+**Green box / name / step 2 (2026-10-11, uncommitted):** the green "Verified participant" box has no buttons; "Sign out" moved to the Home footer next to Admin (tests must click `.admin-link:has-text("Admin")`, there are now two `.admin-link`s when signed in); `editDisplayName` (a `prompt()` that did nothing on phones) is gone: step 1's name box is always an editable input prefilled with the saved name, and `wzSubmit` saves it when it differs from `S.participantName` (this also renames earlier named contributions). Step 2's first paragraph is one short sentence and Write it / Say it stay side by side on phones.
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).
