@@ -29,6 +29,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 
 **Click-to-edit name (2026-10-11):** the bold name in the green box (`.auth-name`, dotted underline + pencil) turns into an inline input (Enter/Save, Esc/✕) via `startNameEdit` / `saveNameEdit` in `public/app.js`; box height stays ~44px. Note the global `input[type="text"]` rule beats single-class selectors, so the inline input is styled as `.auth-status .auth-name-input`.
 
+**iPhone zoom (2026-10-11):** iOS Safari zooms the page when a text field under 16px is focused and stays zoomed ("the page falls off the screen"). Under 768px wide every input/textarea/select is 16px (`!important` block at the end of `public/styles.css`); keep new fields at 16px on phones. Not verifiable in desktop Chrome, only the computed size is tested.
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).

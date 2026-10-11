@@ -314,6 +314,7 @@ check('user text is sent inside <input> tags, with a do-not-follow system prompt
   check('the bold name in the green box is a clickable button (pencil, no extra height)', (await pg.locator('.auth-status button.auth-name:has-text("Alpha Person")').count()) === 1 && (await pg.locator('.auth-status .ti-pencil').count()) === 1);
   await pg.click('.auth-name');
   check('clicking it turns the name into an inline editor, same box height', (await pg.inputValue('#auth-name-input')) === 'Alpha Person' && Math.abs((await pg.locator('.auth-status').evaluate((e) => Math.round(e.getBoundingClientRect().height))) - boxH) <= 2);
+  check('phone: the inline name box and the step-1 name box are 16px (smaller text makes iPhone Safari zoom the page)', (await pg.locator('#auth-name-input').evaluate((e) => getComputedStyle(e).fontSize)) === '16px' && (await pg.locator('#display-name').evaluate((e) => getComputedStyle(e).fontSize)) === '16px');
   await pg.fill('#auth-name-input', 'Gamma Person'); await pg.keyboard.press('Enter');
   await pg.waitForSelector('.auth-status button.auth-name:has-text("Gamma Person")');
   check('Enter saves it: the green box and the step-1 name box both show the new name', (await pg.inputValue('#display-name')) === 'Gamma Person' && (await db()).submissions.filter((x) => x.content === 'first thought').every((x) => x.display_name === 'Gamma Person'));

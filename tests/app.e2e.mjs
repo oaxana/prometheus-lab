@@ -192,6 +192,8 @@ const pctx = await browser.newContext({ viewport: { width: 375, height: 740 }, i
 await pp.goto(B); await pp.waitForSelector('.hero-cta');
 const navFit = await pp.evaluate(() => ({ right: Math.max(...[...document.querySelectorAll('nav button')].map((b) => b.getBoundingClientRect().right)), w: innerWidth, sw: document.documentElement.scrollWidth, nav: [document.getElementById('nav').scrollWidth, document.getElementById('nav').clientWidth] }));
 check('phone: all 5 tabs fit the 375px screen and the page does not scroll sideways', navFit.right <= navFit.w && navFit.sw <= navFit.w && navFit.nav[0] <= navFit.nav[1], JSON.stringify(navFit));
+await pp.click('nav button:has-text("Submit")'); await pp.waitForSelector('#auth-email');
+check('phone: the email box is 16px so iPhone Safari does not zoom in on it', (await pp.locator('#auth-email').evaluate((e) => getComputedStyle(e).fontSize)) === '16px');
 await pctx.close();
 // Home fits a laptop screen: everything down to and including the "What's a constitution here?" card is visible without scrolling
 const fctx = await browser.newContext({ viewport: { width: 1280, height: 650 } }); const fp = await fctx.newPage();
