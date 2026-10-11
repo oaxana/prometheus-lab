@@ -9,7 +9,6 @@ let S={view:'home',submissions:[],isAdmin:false,adminChecked:false,adminBusy:fal
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
   loaded:false,authReady:false,session:null,participantName:'',
   authEmail:'',otpSent:false,authBusy:false,authError:'',
-  metrics:null,metricsState:'',metricsKey:-1,
   // Synthesis history: version list (metadata, newest first), full bodies by version (immutable, so cached
   // for good), the version being viewed (null = latest), and the pending-material status from GET /api/synthesize.
   synVersions:[],synBodies:{},synView:null,synStatus:null,synStatusState:'',synStatusKey:'',
@@ -174,36 +173,20 @@ function render(){
   if(fk)document.querySelector(`#main [data-fk="${fk}"]`)?.focus({preventScroll:true});
 }
 
-// Home counts come from /api/metrics. They are cached for the session and re-fetched only when the number of
-// real contributions we can already see changes (the 20 s poll updates that), so the numbers stay roughly live.
-async function fetchMetrics(key){
-  S.metricsKey=key;S.metricsState='loading';
-  try{
-    const r=await fetch('/api/metrics');
-    let d={};try{d=await r.json();}catch(e){}
-    if(r.status===401&&d.code==='crew_login'){location.reload();return;}
-    if(!r.ok||![d.voices,d.pillarsCovered,d.contributions].every(Number.isInteger))throw new Error('metrics '+r.status);
-    S.metrics=d;S.metricsState='ok';
-  }catch(e){console.error(e);S.metricsState='failed';}
-  if(S.view==='home')render();
-}
 function renderHome(m){
-  const key=S.submissions.filter(s=>!s.isTest).length;
-  if(S.loaded&&S.metricsKey!==key&&S.metricsState!=='loading')fetchMetrics(key);
-  const mt=S.metrics,num=v=>mt?String(v):'—';
-  const stats=S.metricsState==='failed'&&!mt?'':`<div class="stat-row home-stats" aria-label="Live counts"><div class="stat"><div class="stat-num">${num(mt?.voices)}</div><div class="stat-label">Voices heard</div></div><div class="stat"><div class="stat-num">${mt?mt.pillarsCovered+'/'+PILLARS.length:'—'}</div><div class="stat-label">Pillars covered</div></div><div class="stat"><div class="stat-num">${num(mt?.contributions)}</div><div class="stat-label">Contributions</div></div></div>`;
   const step=(n,title,text,go)=>`<button class="step-card clickable" onclick="nav('${go}')"><span class="step-num">${n}</span><span class="step-title">${title}</span><span class="step-text">${text}</span></button>`;
   m.innerHTML=`<section class="hero">
     <p class="hero-eyebrow">Prometheus Lab</p>
-    <h1>Help shape how <span class="hl">humans and AI</span> live together</h1>
+    <h1>Help shape how <span class="hl">Humans and AI</span> coexist together</h1>
     <p class="hero-sub">We're writing a constitution for the playa — and beyond. Your perspective matters. Two minutes. Submit as many times as you like.</p>
     <button class="btn btn-amber hero-cta" onclick="nav('submit')"><i class="ti ti-flame" aria-hidden="true"></i> Start here</button>
   </section>
-  ${stats}
   <div class="section-divider"><span>How it works</span></div>
   <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe','submit')}${step(2,'Map',`AI connects your ideas to ${PILLARS.length} constitutional pillars`,'pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps','synthesis')}</div>
-  <div class="card info-card"><h2 class="info-q">What's a constitution here?</h2><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
-  <div class="card info-card trust-card"><i class="ti ti-shield-lock trust-icon" aria-hidden="true"></i><div><h2 class="info-q">Built on trust</h2><p><strong class="trust-lead">Your email stays private.</strong> It is used only to make sure each voice counts once, and it is never shown to anyone or sent to the AI. Even anonymous submissions are tied to a real person, so every perspective carries equal weight. Your raw words stay private to you. Only AI-generated summaries are shared with the group.</p></div></div>
+  <div class="info-stack">
+  <div class="card info-card"><div class="info-head"><i class="ti ti-script info-icon" aria-hidden="true"></i><h2 class="info-q">What's a constitution here?</h2></div><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
+  <div class="card info-card trust-card"><div class="info-head"><i class="ti ti-shield-lock info-icon" aria-hidden="true"></i><h2 class="info-q">Built on trust</h2></div><p><strong class="trust-lead">Your email stays private.</strong> It only makes sure each voice counts once, and is never shown to anyone or sent to the AI. Your raw words stay yours; only AI summaries are shared with the group.</p></div>
+  </div>
   <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>
   <p class="admin-link-row"><button class="admin-link" onclick="nav('admin')">Admin</button></p>`;
 }
@@ -227,7 +210,7 @@ function renderSubmit(m){
       <p>Your email is used only by Supabase to make sure every person gets one voice. It is never included in synthesis or shown to other participants.</p>
       ${S.authError?`<p class="auth-error">${esc(S.authError)}</p>`:''}
       ${!S.otpSent?`<div class="auth-form"><input type="email" id="auth-email" autocomplete="email" placeholder="you@example.com" value="${esc(S.authEmail)}" oninput="S.authEmail=this.value"><button class="btn btn-primary" onclick="sendVerificationCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Sending…':'Send code'}</button></div>`
-      :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
+      :`<p class="auth-note">We sent a six-digit code to <strong>${esc(S.authEmail)}</strong>.</p><div class="auth-form"><input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Verification code"><button class="btn btn-primary" onclick="verifyParticipantCode()" ${S.authBusy?'disabled':''}>${S.authBusy?'Checking…':'Verify'}</button></div><div class="spam-nudge" role="note"><span class="spam-icon" aria-hidden="true">📬</span><div><strong>Code not showing up?</strong> Peek in your <strong>spam</strong> or <strong>promotions</strong> folder — it likes to hide there.</div></div><button class="raw-toggle" onclick="resetVerification()">Use a different email</button>`}
     </div>`;return;
   }
   const identity=`<div class="auth-status"><span>✓ Verified participant${S.participantName?` · <strong>${esc(S.participantName)}</strong>`:''}</span><span><button class="raw-toggle" onclick="editDisplayName()">${S.participantName?'Edit name':'Set display name'}</button><button class="raw-toggle" onclick="signOutParticipant()">Sign out / switch</button></span></div>`;

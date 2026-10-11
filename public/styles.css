@@ -151,13 +151,17 @@ input[type="text"]:focus,input[type="email"]:focus,input[type="password"]:focus{
 .wz-card:hover{border-color:var(--amber)}.wz-card.selected{border:2px solid var(--amber);background:var(--amber-dim);padding:17px 11px}
 .wz-card .ti{font-size:26px;color:var(--amber-text)}.wz-card-title{font-size:15px;font-weight:600}.wz-card-sub{font-size:12px;color:var(--muted)}
 /* pillar cards */
-.wz-pillars{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
-@media(min-width:520px){.wz-pillars{grid-template-columns:repeat(3,1fr)}}
-.wz-pillar{position:relative;display:flex;flex-direction:column;gap:4px;font-family:var(--font);font-size:12px;line-height:1.3;text-align:left;padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s}
-.wz-pillar .emoji{font-size:16px}.wz-pillar:hover{border-color:var(--amber);color:var(--text)}
-.wz-pillar.selected{border:2px solid var(--amber);background:var(--amber-dim);color:var(--text);padding:9px 7px}
-.wz-pillar.special{border-style:dashed;font-style:italic;justify-content:center;min-height:52px}
-.wz-tick{position:absolute;top:6px;right:6px;font-size:14px;color:var(--amber-text)}
+.wz-pillars{display:grid;grid-template-columns:repeat(2,1fr);grid-auto-rows:1fr;gap:8px;margin-bottom:12px}
+.wz-pillar.special.not_sure,.wz-pillar.special.something_else{grid-column:1/-1}   /* phone: both special options get a full-width row */
+@media(min-width:520px){.wz-pillars{grid-template-columns:repeat(3,1fr)}.wz-pillar.special.not_sure{grid-column:auto}}
+.wz-pillar{position:relative;display:flex;flex-direction:row;align-items:center;gap:9px;min-height:64px;font-family:var(--font);font-size:12.5px;line-height:1.3;text-align:left;padding:10px 26px 10px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s}
+.wz-pillar .emoji{font-size:20px;line-height:1;flex-shrink:0;width:24px;text-align:center}.wz-pillar:hover{border-color:var(--amber);color:var(--text)}
+.wz-pillar .wz-pname{min-width:0}
+.wz-pillar.selected{border:2px solid var(--amber);background:var(--amber-dim);color:var(--text);padding:9px 25px 9px 9px}
+.wz-pillar.special{border-style:dashed}
+.wz-pillar.special.something_else{justify-content:center}
+.wz-pillar.special.something_else .wz-pname{flex:0 1 auto}
+.wz-tick{position:absolute;top:50%;right:8px;transform:translateY(-50%);font-size:14px;color:var(--amber-text)}
 .wz-new{display:flex;align-items:flex-start;gap:10px;border:1px dashed var(--amber);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;font-size:14px}
 .wz-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:10px;background:var(--amber-dim);color:var(--amber-text);white-space:nowrap}
 .wz-badge.solid{background:var(--amber);color:var(--on-amber);font-size:12px;padding:4px 12px}
@@ -192,23 +196,26 @@ input[type="text"]:focus,input[type="email"]:focus,input[type="password"]:focus{
 
 /* ---------- Home landing page (renderHome in public/app.js) ---------- */
 nav button.locked{opacity:.45}nav button.locked:hover{opacity:.7}nav button .ti-lock{font-size:12px;vertical-align:-1px}
-.hero{text-align:center;padding:20px 0 28px}
-.hero-eyebrow{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px}
-.hero h1{font-size:30px;line-height:1.2;margin:0 auto 14px}.hero h1 .hl{color:var(--amber-text)}
-.hero-sub{margin:0 auto 22px;font-size:15px;color:var(--muted)}
-.hero-cta{display:inline-flex;align-items:center;gap:8px;padding:13px 30px}.hero-cta .ti{font-size:18px}
+.hero{text-align:center;padding:14px 0 22px}
+.hero-eyebrow{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px}
+.hero h1{font-size:30px;line-height:1.2;margin:0 auto 10px;text-wrap:balance}
+@media(min-width:800px){.hero h1{white-space:nowrap;margin-inline:-60px;font-size:29px}}.hero h1 .hl{color:var(--amber-text)}
+.hero-sub{margin:0 auto 18px;font-size:15px;color:var(--muted);line-height:1.5}
+.hero-cta{display:inline-flex;align-items:center;gap:8px;padding:11px 28px}.hero-cta .ti{font-size:18px}
 .home-stats .stat-num{color:var(--amber-text);font-variant-numeric:tabular-nums}
-.section-divider{display:flex;align-items:center;gap:12px;margin:8px 0 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
+.section-divider{display:flex;align-items:center;gap:12px;margin:4px 0 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
 .section-divider::before,.section-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.step-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:16px}
+.step-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px}
 @media(min-width:560px){.step-grid{grid-template-columns:repeat(3,1fr)}}
-.step-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-family:var(--font);transition:border-color .15s}
+.step-card{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:6px;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-family:var(--font);transition:border-color .15s}
 .step-card:hover{border-color:var(--amber)}.step-card.clickable{cursor:pointer}
 .step-card:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.step-text{grid-column:1/-1}
 .step-num{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--amber-dim);color:var(--amber-text);font-size:13px;font-weight:700}
 .step-title{font-size:15px;font-weight:600}.step-text{font-size:13px;color:var(--muted);line-height:1.45}
-.info-card .info-q{font-size:15px;margin-bottom:8px}.info-card p{font-size:14px;color:var(--muted)}
-.trust-card{display:flex;gap:14px;align-items:flex-start}.trust-icon{font-size:26px;color:var(--amber-text);flex-shrink:0;margin-top:1px}
+.info-card{padding:14px 18px;margin-bottom:12px}.info-card .info-q{font-size:15px;margin-bottom:6px}.info-card p{font-size:14px;color:var(--muted)}
+.info-stack{display:grid;grid-auto-rows:1fr;gap:12px;margin-bottom:12px}.info-stack .info-card{margin-bottom:0}
+.info-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}.info-head .info-q{margin:0}.info-icon{font-size:24px;line-height:1;color:var(--amber-text);flex-shrink:0}
 .home-footer{text-align:center;font-size:12px;color:var(--muted);line-height:1.6;margin-top:28px}
 .admin-link-row{text-align:center;margin-top:10px}
 .admin-link{background:0;border:0;padding:4px 8px;font-family:var(--font);font-size:11px;color:var(--muted);opacity:.6;cursor:pointer}
@@ -337,3 +344,15 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .locked-panel{position:absolute;top:90px;left:50%;transform:translateX(-50%);width:min(380px,100%);text-align:center;padding:26px 22px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .locked-panel h2{margin-bottom:8px}.locked-panel p{font-size:14px;color:var(--muted);margin-bottom:18px}
 .locked-icon{font-size:26px;color:var(--amber-text);display:block;margin-bottom:8px}
+
+/* wizard step 2: the "skip this step" link sits inside the sentence */
+.subtitle:has(+ .wz-skip-note){margin-bottom:10px}
+.wz-skip-note{color:var(--muted);font-size:15px;line-height:1.55;margin-bottom:18px}
+.wz-skip{font:inherit;color:var(--amber-text);background:0;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.wz-skip:hover{color:var(--text)}.wz-skip:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:2px}
+/* "check your spam" nudge under the verification-code box: friendly at once, then a gentle wiggle after 12 s of waiting */
+.spam-nudge{display:flex;gap:12px;align-items:center;margin:14px 0 12px;padding:12px 14px;border-radius:var(--radius);background:var(--amber-dim);border:1px dashed var(--amber);font-size:13px;line-height:1.4;color:var(--text)}
+.verify-card .spam-nudge{color:var(--text);margin-bottom:12px}
+.spam-icon{font-size:26px;line-height:1;display:inline-block;transform-origin:50% 80%;animation:spam-wiggle 1.2s ease-in-out 12s 2}
+@keyframes spam-wiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg) scale(1.15)}40%{transform:rotate(12deg) scale(1.15)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
+@media(prefers-reduced-motion:reduce){.spam-icon{animation:none}}

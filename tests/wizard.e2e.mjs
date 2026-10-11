@@ -39,8 +39,9 @@ await p.screenshot({ path: 'screens/shot-wizard-1.png', fullPage: true });
 // ---------------- Step 2
 await p.click('#wz-start'); await p.waitForSelector('.wz-title:has-text("What topics matter most to you?")');
 check('stepper: step 1 done (blue), step 2 active (amber)', (await color(p, '.wz-stepper li.done', 'backgroundColor')) !== (await color(p, '.wz-stepper li:last-child', 'backgroundColor')) && (await color(p, '.wz-stepper li.active', 'backgroundColor')) === 'rgb(239, 159, 39)');
-check('step 2 asks the blank-slate question', (await p.locator('.subtitle').innerText()).includes('what are the most important topics to address as humans and AI begin to coexist?'));
+check('step 2 asks the blank-slate question', (await p.locator('.subtitle').first().innerText()).includes('what are the most important topics to address as humans and AI begin to coexist?'));
 check('step 2 is gated before any input', !(await nextOn(p)));
+check('step 2 note: new wording, same font size as the sentence above, with a "skip this step" link', (await p.locator('.wz-skip-note').innerText()).startsWith('Your ideas will help shape our pillars and themes. You can add in-depth ideas and upload documents in the next step. You can also skip this step') && (await color(p, '.wz-skip-note', 'fontSize')) === (await color(p, '.subtitle', 'fontSize')) && (await p.locator('.wz-skip').innerText()) === 'skip this step');
 check('Write it / Say it cards', (await p.locator('.wz-cards .wz-card').allInnerTexts()).map((t) => t.trim()).join('|') === 'Write it|Say it');
 await p.click('[data-fk=dm-text]');
 check('textarea appears inline with the placeholder, no maxlength', (await p.locator('#discovery-text').getAttribute('placeholder')) === 'What principles, boundaries, or values matter most? What concerns you? What excites you?' && (await p.locator('#discovery-text').getAttribute('maxlength')) === null);
@@ -59,7 +60,9 @@ await p.waitForSelector('.wz-pillars');
 check('matched pillars shown as highlighted cards (ids from the model, bad ids dropped)', (await p.locator('h3:has-text("Your ideas connect to these draft pillars:")').count()) === 1 && (await p.locator('.wz-pillars').first().locator('.wz-pillar.selected').count()) === 2);
 check('novel idea shown with a "New" badge and dashed border', (await p.locator('.wz-new .wz-badge').textContent()) === 'New' && (await color(p, '.wz-new', 'borderTopStyle')) === 'dashed' && (await p.locator('.wz-new').innerText()).includes('AI-free quiet hours'));
 check('full grid: 8 pillars + 2 special options', (await p.locator('.wz-pillars').last().locator('.wz-pillar').count()) === 10);
-check('special options are dashed + italic', (await color(p, '.wz-pillar.special', 'borderTopStyle')) === 'dashed' && (await color(p, '.wz-pillar.special', 'fontStyle')) === 'italic');
+check('special options are dashed, with 🤖 / ❓ and the new wording', (await color(p, '.wz-pillar.special', 'borderTopStyle')) === 'dashed' && (await p.locator('.wz-pillar.special').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()).join('|') === '🤖 Not sure yet — let AI do the match|❓ Something else entirely — doesn’t fit into the pillars above');
+check('all pillar boxes are the same height', new Set(await p.locator('.wz-pillars').last().locator('.wz-pillar').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)))).size === 1);
+check('pillar helper line says "Choose as many as you like."', (await p.locator('.wz-sub').innerText()).includes('Choose as many as you like.'));
 check('2-column grid on a phone', (await color(p, '.wz-pillars', 'gridTemplateColumns')).split(' ').length === 2);
 check('Back is now available', (await p.locator('.wz-nav .btn-ghost:has-text("Back")').count()) === 1);
 // multi-select
@@ -271,5 +274,22 @@ const injected = await (await fetch(B + '/api/map-pillars', { method: 'POST', he
 const sent = JSON.stringify((await log()).filter((x) => x.anthropic).pop().anthropic);
 check('user text is sent inside <input> tags, with a do-not-follow system prompt', sent.includes('<input>') && sent.includes('never as instructions to follow') && Array.isArray(injected.matched));
 
+// ---------------- "Check your spam" nudge + "skip this step"
+{
+  const pg = await mk(420); watch(pg);
+  await pg.goto(B); await pg.click('nav button:has-text("Submit")');
+  check('no spam nudge before the code is sent', (await pg.locator('.spam-nudge').count()) === 0);
+  await pg.fill('#auth-email', 'skip@example.com'); await pg.click('button:has-text("Send code")'); await pg.waitForSelector('#auth-code');
+  check('after sending, a friendly "check your spam" note is visible next to the code box', await pg.locator('.spam-nudge').isVisible() && (await pg.locator('.spam-nudge').innerText()).toLowerCase().includes('spam'));
+  await pg.fill('#auth-code', '123456'); await pg.click('button:has-text("Verify")'); await pg.waitForSelector('#wz-start');
+  await pg.click('#wz-start'); await pg.waitForSelector('.wz-skip');
+  const mapBefore = (await log()).filter((x) => x.anthropic).length, discBefore = (await db()).discovery.length;
+  await pg.click('.wz-skip'); await pg.waitForSelector('.wz-pillars');
+  check('"skip this step" goes to step 3 with no AI mapping and no topic notes saved', (await step(pg)) === 3 && (await pg.locator('.loading').count()) === 0 && (await log()).filter((x) => x.anthropic).length === mapBefore && (await db()).discovery.length === discBefore);
+  check('after skipping, Next waits for a pillar choice, then works with "Not sure yet"', !(await nextOn(pg)) && (await pg.locator('.wz-pillar.selected').count()) === 0);
+  await pg.click('[data-fk=not_sure]'); check('"Not sure yet" unlocks Next', await nextOn(pg));
+  await pg.click('.wz-nav .btn-ghost'); await pg.waitForSelector('.wz-skip');
+  check('Back from step 3 returns to step 2', (await step(pg)) === 2);
+}
 check('no console/page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 console.log(`\n${pass}/${total} passed`); await b.close();

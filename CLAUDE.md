@@ -17,6 +17,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 - **Voices "Mine only"** = own individual contributions only (`ownVoice`); uploaded transcript speakers don't count, the uploader still manages them.
 - Safety copies: tag `pre-new-pillars-2026-10-10` (= `1a64078`, the 12-pillar version, pushed); backups `backups/2026-10-10-063057.json`, `backups/2026-10-11.json` (git-ignored).
 
+**UI round 2026-10-11 (uncommitted, in `codex-dev` working tree):** Home: removed the three count boxes (and the `/api/metrics` fetch in the page; the API itself stays), headline "Help shape how Humans and AI coexist together", tighter spacing so the "What's a constitution here?" card fits a 1280x650 laptop view (tested). Wizard step 2: note text replaced + skip link (`wzSkipDiscovery`; if something was already written it acts like Next). Step 3: all pillar boxes equal height (emoji beside text), "🤖 Not sure yet — let AI do the match", "❓ Something else entirely — doesn't fit into the pillars above" (full-width row), helper "…Choose as many as you like." Home info cards: "What's a constitution here?" (ti-script icon) and "Built on trust" (shorter text) sit in `.info-stack`, a grid that keeps both the same height. Verification: `.spam-nudge` "check your spam" note once the code is sent (icon wiggles after 12 s, CSS only).
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).

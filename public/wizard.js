@@ -134,9 +134,15 @@ function wzStep2(){
     :W.dMode==='voice'?wzRecorder('d'):'';
   return `<p class="wz-eyebrow">Step 2</p>${wzTitle(heading)}
     <p class="subtitle">${copy}</p>
-    <p class="wz-help wz-help-spaced">${own?'These will become Pillars or themes. You will have the option to add in-depth ideas and upload documents on the next page.':'Source context is never used to identify a real person.'}</p>
+    ${own?'<p class="wz-skip-note">Your ideas will help shape our pillars and themes. You can add in-depth ideas and upload documents in the next step. You can also <button type="button" class="wz-skip" onclick="wzSkipDiscovery()">skip this step</button>.</p>'
+      :'<p class="wz-help wz-help-spaced">Source context is never used to identify a real person.</p>'}
     <div class="wz-cards two">${wzModeCard(W.dMode==='text','pencil','Write it','','wzSetDMode(\'text\')','dm-text')}${wzModeCard(W.dMode==='voice','microphone','Say it','','wzSetDMode(\'voice\')','dm-voice')}</div>
     <div class="wz-inline">${area}</div>${wzNav({nextOk:wzValid(2)})}`;}
+// "skip this step": go on to the pillars without any topic notes (nothing to map). If something was already written, it counts as Next.
+function wzSkipDiscovery(){
+  wzSyncFields();
+  if(wzDiscoveryText())return wzNext();
+  wzStopAllRec();W.mapState='done';W.mapFor='';W.mapping={matched:[],newIdeas:[],reasoning:''};wzGo(3);}
 function wzSetDMode(m){wzSyncFields();wzStopAllRec();W.dMode=m;render();}
 
 // ---- step 3: AI mapping ----
@@ -163,7 +169,7 @@ async function wzEnsureMapping(){
   }}
 function wzPillarCard(p){
   const on=W.choice==='selected'&&W.pillars.has(p.id);
-  return `<button type="button" class="wz-pillar ${on?'selected':''}" aria-pressed="${on}" data-fk="p${p.id}" onclick="wzTogglePillar(${p.id})"><span class="emoji">${p.emoji}</span><span>${esc(p.name)}</span>${on?'<i class="ti ti-check wz-tick" aria-hidden="true"></i>':''}</button>`;}
+  return `<button type="button" class="wz-pillar ${on?'selected':''}" aria-pressed="${on}" data-fk="p${p.id}" onclick="wzTogglePillar(${p.id})"><span class="emoji">${p.emoji}</span><span class="wz-pname">${esc(p.name)}</span>${on?'<i class="ti ti-check wz-tick" aria-hidden="true"></i>':''}</button>`;}
 function wzStep3(){
   if(W.mapState==='loading')return `<p class="wz-eyebrow">Step 3</p>${wzTitle('Here’s how your ideas connect')}<div class="loading" role="status"><div class="spinner"></div>Mapping your ideas...</div>
     <div class="wz-nav"><button type="button" class="btn-ghost" onclick="wzBack()">← Back</button><span></span></div>`;
@@ -172,10 +178,10 @@ function wzStep3(){
   const matchedHtml=matched.length?`<h3>Your ideas connect to these draft pillars:</h3><div class="wz-pillars">${matched.map(wzPillarCard).join('')}</div>${mp.reasoning?`<p class="wz-help">${esc(mp.reasoning)}</p>`:''}`:'';
   const newHtml=mp&&mp.newIdeas.length?`<h3>This seems new — not covered by our draft pillars yet:</h3>${mp.newIdeas.map(t=>`<div class="wz-new"><span class="wz-badge">New</span><span>${esc(t)}</span></div>`).join('')}`:'';
   const failNote=W.mapState==='failed'?`<p class="wz-note">We couldn’t map your ideas automatically just now. No problem — pick the pillars that fit best below.</p>`:'';
-  const special=(k,label)=>`<button type="button" class="wz-pillar special ${W.choice===k?'selected':''}" aria-pressed="${W.choice===k}" data-fk="${k}" onclick="wzChoose('${k}')"><span>${label}</span>${W.choice===k?'<i class="ti ti-check wz-tick" aria-hidden="true"></i>':''}</button>`;
+  const special=(k,emoji,label)=>`<button type="button" class="wz-pillar special ${k} ${W.choice===k?'selected':''}" aria-pressed="${W.choice===k}" data-fk="${k}" onclick="wzChoose('${k}')"><span class="emoji">${emoji}</span><span class="wz-pname">${label}</span>${W.choice===k?'<i class="ti ti-check wz-tick" aria-hidden="true"></i>':''}</button>`;
   return `<p class="wz-eyebrow">Step 3</p>${wzTitle('Here’s how your ideas connect')}${failNote}${matchedHtml}${newHtml}
-    <h3 class="wz-sub">${matched.length||mp?'All draft pillars — tap to add or remove':'Which pillars fit your ideas? Tap to choose (one or more)'}</h3>
-    <div class="wz-pillars">${PILLARS.map(wzPillarCard).join('')}${special('not_sure','Not sure yet')}${special('something_else','Something else entirely')}</div>
+    <h3 class="wz-sub">${matched.length||mp?'All draft pillars — tap to add or remove. Choose as many as you like.':'Which pillars fit your ideas? Tap to choose (one or more)'}</h3>
+    <div class="wz-pillars">${PILLARS.map(wzPillarCard).join('')}${special('not_sure','🤖','Not sure yet — let AI do the match')}${special('something_else','❓','Something else entirely — doesn’t fit into the pillars above')}</div>
     ${wzNav({nextOk:wzValid(3)})}`;}
 function wzTogglePillar(id){wzSyncFields();W.choice='selected';W.pillars.has(id)?W.pillars.delete(id):W.pillars.add(id);render();}
 function wzChoose(k){wzSyncFields();if(W.choice===k)W.choice='selected';else{W.choice=k;W.pillars=new Set();}render();}

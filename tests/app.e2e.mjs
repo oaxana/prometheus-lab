@@ -16,12 +16,11 @@ const dialogs = [];
 page.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
 
 await page.goto(B);
-await page.waitForSelector('.stat-num');
-await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent !== '—');
-check('home renders 3 live stats', (await page.locator('.stat').count()) === 3);
-check('home shows 0 voices / 0 of 8 pillars / 0 contributions', (await page.locator('.stat-num').allInnerTexts()).join('|') === '0|0/8|0');
+await page.waitForSelector('.hero-cta');
+check('home no longer shows the three live-count boxes', (await page.locator('.stat, .home-stats').count()) === 0);
+check('home headline reads "Humans and AI coexist together"', (await page.locator('h1').innerText()).trim() === 'Help shape how Humans and AI coexist together');
 check('home has hero headline, "Start here" CTA, no trust line under it, 3 step cards, context + trust blocks, footer',
-  (await page.locator('h1').innerText()).includes('humans and AI') && await page.locator('.hero-cta:has-text("Start here")').isVisible() &&
+  (await page.locator('h1').innerText()).includes('Humans and AI') && await page.locator('.hero-cta:has-text("Start here")').isVisible() &&
   (await page.locator('main :text("Anonymous by default")').count()) === 0 && (await page.locator('.step-card').count()) === 3 &&
   await page.locator('h2:has-text("What\'s a constitution here?")').isVisible() && await page.locator('.trust-card h2:has-text("Built on trust")').isVisible() &&
   await page.locator('.trust-card :text("Your email stays private.")').isVisible() &&
@@ -87,9 +86,8 @@ await page.click('button:has-text("Expand all")');
 check('pillars expand all', (await page.locator('.pillar-ref-body.open').count()) === 8);
 await page.screenshot({ path: SHOTS + 'screens/shot-pillars.png', fullPage: false });
 await page.click('nav button:has-text("Home")');
-await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent === '1');
 const realRows = (await (await fetch(B + '/__db')).json()).submissions.filter((r) => !r.is_test);
-check('home counts refresh after a submission (1 voice, 1 contribution); pillars covered stays 0 until a synthesis exists', realRows.length === 1 && (await page.locator('.stat-num').allInnerTexts()).join('|') === '1|0/8|1');
+check('one real submission saved; home still has no count boxes', realRows.length === 1 && (await page.locator('.stat').count()) === 0);
 await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card'); await openSubs(page);
 check('card shows AI summary, not raw text', (await page.locator('.summary-text').first().innerText()) === 'A short summary.');
 check('auto-tagged badge + pillar pills (1 and 3)', (await page.locator('.pill.auto').count()) === 2);
@@ -185,12 +183,13 @@ const m = await (await fetch(B + '/api/metrics')).json();
 check('metrics API leaves out test rows and exposes only three counts', JSON.stringify(Object.keys(m).sort()) === '["contributions","pillarsCovered","voices"]' && m.contributions === 1 && m.voices === 1);
 check('metrics API is GET-only', (await fetch(B + '/api/metrics', { method: 'POST' })).status === 405);
 
-// Home when the metrics service is down: section hides, rest of the page still works (separate page: the 500 is an expected console error)
-await fetch(B + '/__metrics?m=fail');
-const dctx = await browser.newContext({ viewport: { width: 375, height: 800 } }); const dp = await dctx.newPage();
-await dp.goto(B); await dp.waitForSelector('.hero-cta'); await dp.waitForTimeout(800);
-check('metrics failure hides the numbers gracefully', (await dp.locator('.home-stats').count()) === 0 && (await dp.locator('.step-card').count()) === 3);
-await dctx.close(); await fetch(B + '/__metrics?m=ok');
+// Home fits a laptop screen: everything down to and including the "What's a constitution here?" card is visible without scrolling
+const fctx = await browser.newContext({ viewport: { width: 1280, height: 650 } }); const fp = await fctx.newPage();
+await fp.goto(B); await fp.waitForSelector('.hero-cta');
+const fit = await fp.evaluate(() => ({ bottom: document.querySelector('.info-card').getBoundingClientRect().bottom, h: innerHeight, h1w: document.querySelector('h1').getBoundingClientRect().height }));
+check('home: constitution card fits a 1280x650 laptop view; headline on one line', fit.bottom <= fit.h && fit.h1w < 45, JSON.stringify(fit));
+check('home: "What\'s a constitution here?" and "Built on trust" cards are the same height, each with an icon', new Set(await fp.locator('.info-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)))).size === 1 && (await fp.locator('.info-card .info-icon').count()) === 2);
+await fctx.close();
 
 // Synthesis: locked first
 await page.click('nav button:has-text("Synthesis")');
