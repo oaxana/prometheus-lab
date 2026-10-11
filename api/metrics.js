@@ -1,5 +1,7 @@
 // GET /api/metrics
 // Returns: { voices, pillarsCovered, contributions }   (real, non-test contributions only)
+// pillarsCovered is the latest synthesis's number (pillars with common ground or contested findings, i.e. not
+// gaps), the same figure the Synthesis tab shows; 0 before the first synthesis. It changes only when a new version is created.
 // Public counts for the Home tab. Uses the server-side key because the submissions table is private;
 // only these three numbers leave the server (no ids, text, names or emails).
 import { createClient } from '@supabase/supabase-js';
@@ -52,7 +54,15 @@ export default async function handler(req, res) {
       if (r.participant_id) voices.add(`auth:${r.participant_id}`);
       else if (r.uid) voices.add(`legacy:${r.uid}`);
     }
-    const pillars = new Set(rows.flatMap((r) => r.pillars ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= 12));
+    const { data: latest, error: synError } = await dbClient()
+      .from('synthesis_versions')
+      .select('commons, contested')
+      .order('version', { ascending: false })
+      .limit(1);
+    if (synError) throw new HttpError(500, 'Could not read the latest synthesis from Supabase.');
+    const syn = latest?.[0];
+    // Same rule as the Synthesis tab's "Pillars covered" (renderSynthesisResult in public/app.js).
+    const pillars = new Set([...(syn?.commons ?? []), ...(syn?.contested ?? [])].map((c) => c.pillarId ?? c.pillar));
     return send(res, 200, { voices: voices.size, pillarsCovered: pillars.size, contributions: rows.length });
   } catch (err) {
     return fail(res, err);

@@ -2,9 +2,23 @@
 
 Read this first, then `README.md` (full docs, decisions, status). This file holds the rules and the current to-do list.
 
-**Current status and next steps:** see "Where we left off (2026-10-10)" directly below. Everything after it is history/reference.
+**Current status and next steps:** see "Where we left off (2026-10-11)" directly below. Everything after it is history/reference.
 
-## Where we left off (2026-10-10) — READ THIS FIRST in a new session
+## Where we left off (2026-10-11) — READ THIS FIRST in a new session
+**Project: consolidate 12 pillars → 8, then synthesis Version 2 as a blank slate.** Owner's doc: `~/Downloads/Burning Man AI Constitution — 8 Pillars.docx`. Work in phases with local save-point commits on `codex-dev` (owner asked for checkpoints in case a session is cut off; NOT pushed until the owner says "commit and push").
+- **Safety copies:** local git tag `pre-new-pillars-2026-10-10` (= `1a64078`, the live 12-pillar version; NOT pushed yet, owner hasn't OK'd pushing it). Read-only DB backup `backups/2026-10-10-063057.json` (17 submissions = 14 transcript speakers + 3 individual, 1 synthesis version v1 made with the 12 old pillars: 9 commons, 2 contested, gap = Environmental Stewardship).
+- **Phase 1 DONE (local save point, all 21 suites pass, not pushed):**
+  - Home: hero text full width, button "Start here", "Anonymous by default"/trust line removed, "Your email stays private." leads the Built on trust box, step cards link Share→Submit, Map→Pillars, Synthesize→Synthesis.
+  - Locked tabs now OPEN to a faded grey placeholder (`renderLocked`, never the real content: pillars must stay unseen before wizard step 2) with "Unlocks after your first submission" + "Start here". No more toast.
+  - Home "Pillars covered" = latest synthesis's number (commons + contested pillars), from `api/metrics.js`; 0 before any synthesis (owner's choice).
+  - 8 pillars in `public/pillars.js` + `api/_shared.js` (emojis reused from matching old pillars, "Connects to" principles kept where they match). `LEGACY_PILLARS` (old 12 names+emojis) render old versions: Synthesis looks pillars up by NAME, total "/ 12" vs "/ 8" via `synPillarTotal`. No hard-coded 12 left (ids validated with `isPillarId`).
+  - `api/synthesize.js`: `pillarsChangedSince(latest)` → `pending.pillarsChanged`, so "Create new synthesis" is allowed when the latest version names a pillar no longer in the list; pending line "The pillars have changed…".
+  - Voices "Mine only" = own individual contributions only (`ownVoice`): uploaded transcript speakers/document authors don't count (the uploader still manages them).
+  - No SQL change needed (DB constraint allows ids 1–12; 1–8 fits).
+- **Phase 2 TODO: re-tag the 17 live contributions** against the 8 pillars with the AI (script using `api/map-pillars`/summarize logic; dry-run prints proposed tags, owner approves ONCE for all 17, then writes only the `pillars` column; originals untouched). Timing: right before/after the push, since live rows still carry OLD pillar ids (old id 3 would show as new pillar 3).
+- **Phase 3 TODO:** owner says "commit and push" → push `codex-dev` + fast-forward `main` (+ the tag if OK'd), gate check, `vercel ls`; then owner runs Admin → Synthesis → Create new synthesis → Version 2 (expect 17 voices; measure run time).
+
+## Where we left off (2026-10-10) — previous session
 - **Live:** everything below is on `main` and deployed (two pushes on 2026-10-10: `59de8a6`, then the transcript/wizard/admin-only-tests follow-up). Work happens on branch `codex-dev`; `main` is fast-forwarded from it when the owner says "commit and push". Both branches are on GitHub.
 - **Live database (the ONLY one):** source tables + `synthesis_versions` exist (owner ran the new `supabase-setup.sql`). As of the last check: 3 real individual contributions (all three people also speak in the workshop transcript), 0 tests, 0 synthesis versions. The 14 anonymised workshop rows, the owner's 2 test rows and the old synthesis were deleted on purpose (backup: `backups/2026-10-10.json`).
 - **Owner's next steps (not done yet when the chat ended):**

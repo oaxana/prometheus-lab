@@ -58,7 +58,7 @@ check('spinner says "Mapping your ideas..."', (await p.locator('.loading').inner
 await p.waitForSelector('.wz-pillars');
 check('matched pillars shown as highlighted cards (ids from the model, bad ids dropped)', (await p.locator('h3:has-text("Your ideas connect to these draft pillars:")').count()) === 1 && (await p.locator('.wz-pillars').first().locator('.wz-pillar.selected').count()) === 2);
 check('novel idea shown with a "New" badge and dashed border', (await p.locator('.wz-new .wz-badge').textContent()) === 'New' && (await color(p, '.wz-new', 'borderTopStyle')) === 'dashed' && (await p.locator('.wz-new').innerText()).includes('AI-free quiet hours'));
-check('full grid: 12 pillars + 2 special options', (await p.locator('.wz-pillars').last().locator('.wz-pillar').count()) === 14);
+check('full grid: 8 pillars + 2 special options', (await p.locator('.wz-pillars').last().locator('.wz-pillar').count()) === 10);
 check('special options are dashed + italic', (await color(p, '.wz-pillar.special', 'borderTopStyle')) === 'dashed' && (await color(p, '.wz-pillar.special', 'fontStyle')) === 'italic');
 check('2-column grid on a phone', (await color(p, '.wz-pillars', 'gridTemplateColumns')).split(' ').length === 2);
 check('Back is now available', (await p.locator('.wz-nav .btn-ghost:has-text("Back")').count()) === 1);
@@ -106,7 +106,7 @@ await p.screenshot({ path: 'screens/shot-wizard-4.png', fullPage: true });
 
 // ---------------- Step 5 (voice)
 await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Share your thinking")');
-check('step 5 hint lists the chosen pillars', (await p.locator('.wz-hint').innerText()).includes('Consent, Privacy & Data Sovereignty') && (await p.locator('.wz-hint').innerText()).includes('Access, Equity & Inclusion'));
+check('step 5 hint lists the chosen pillars', (await p.locator('.wz-hint').innerText()).includes('Consent, Privacy & Data Sovereignty') && (await p.locator('.wz-hint').innerText()).includes('Inclusion & Access'));
 check('step 5 voice: large record button, gated', (await p.locator('.wz-rec-btn').count()) === 1 && !(await nextOn(p)));
 await p.click('.wz-rec-btn'); await p.waitForSelector('canvas.wz-wave');
 check('while recording: waveform canvas, stop button, live timer', (await p.locator('.wz-rec-btn.live').count()) === 1 && (await p.locator('.wz-rec-status').innerText()).includes('Recording'));
@@ -130,12 +130,12 @@ await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and sub
 check('step 5 goes straight to review (no label step)', (await step(p)) === 6 && (await p.locator('#contrib-type, .wz-chip').count()) === 0);
 const block = (t) => p.locator(`.wz-review:has(h3:has-text("${t}"))`);
 check('review: three blocks each with Edit, no "Type of contribution"', (await p.locator('.wz-review .raw-toggle:has-text("Edit")').count()) === 3 && (await block('Type of contribution').count()) === 0);
-check('review: pillars, format, audio player', (await block('Pillars').innerText()).includes('Access, Equity') && (await block('Format').innerText()).includes('Voice recording') && (await block('Your submission').locator('audio').count()) === 1);
+check('review: pillars, format, audio player', (await block('Pillars').innerText()).includes('Inclusion & Access') && (await block('Format').innerText()).includes('Voice recording') && (await block('Your submission').locator('audio').count()) === 1);
 check('review: only the Anonymous badge (default) when test is off', (await p.locator('.wz-badge.solid').allTextContents()).join('|') === 'Anonymous');
 await block('Pillars').locator('.raw-toggle').click(); await p.waitForSelector('.wz-title:has-text("Here’s how your ideas connect")');
 check('Edit pillars jumps to step 3 with selections intact', (await step(p)) === 3 && (await grid(3).getAttribute('aria-pressed')) === 'true');
 await grid(7).click(); await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and submit")');
-check('Next after an edit returns straight to review', (await step(p)) === 6 && (await block('Pillars').innerText()).includes('Gifting'));
+check('Next after an edit returns straight to review', (await step(p)) === 6 && (await block('Pillars').innerText()).includes('Environmental Stewardship'));
 check('other state preserved after the jump (transcript)', (await block('Your submission').innerText()).includes('Quiet hours matter at every camp.'));
 await block('Format').locator('.raw-toggle').click(); await p.click('[data-fk=m-text]'); await p.click(NEXT);
 check('changing the format sends you through step 5 first', (await step(p)) === 5 && !(await nextOn(p)));
@@ -156,7 +156,7 @@ check('submission linked to its discovery input', sub.discovery_input_id === sta
 check('summary generated from the text', sub.summary === 'A short summary.');
 const call = (await log()).filter((x) => x.anthropic).pop().anthropic;
 const callText = JSON.stringify(call.messages[0].content);
-check('summary prompt carries pillars and does not re-tag', callText.includes('Gifting, Anti-Commodification') && !callText.includes('Pick the 1–3 pillars'));
+check('summary prompt carries pillars and does not re-tag', callText.includes('Environmental Stewardship') && !callText.includes('Pick the 1–3 pillars'));
 
 // ---------------- Step 8
 check('confirmation headline + description', (await p.locator('.wz-confirm').innerText()).includes('Your voice is in the lab now') && (await p.locator('.wz-confirm').innerText()).includes('starting at Burning Man'));
@@ -206,7 +206,7 @@ check('synthesis prompt marks the row as fitting no draft pillar', syn.status ==
 await fetch(B + '/__map?m=fail');
 await runWizard(p, { stopAt: 3, discovery: 'Something about fire safety.' }).catch(() => {});
 await p.waitForSelector('.wz-note');
-check('mapping failure: friendly note, grid still usable, flow not blocked', (await p.locator('.wz-note').innerText()).includes('couldn’t map your ideas automatically') && (await p.locator('.wz-pillars').last().locator('.wz-pillar').count()) === 14 && !(await nextOn(p)));
+check('mapping failure: friendly note, grid still usable, flow not blocked', (await p.locator('.wz-note').innerText()).includes('couldn’t map your ideas automatically') && (await p.locator('.wz-pillars').last().locator('.wz-pillar').count()) === 10 && !(await nextOn(p)));
 await grid(4).click();
 check('mapping failure: pick a pillar manually and continue', await nextOn(p));
 await fetch(B + '/__map?m=ok');

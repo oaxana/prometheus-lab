@@ -1,7 +1,7 @@
 // GET /api/suggested-pillars
 // Returns: { items: [{ idea: string, people: [{ name: string, isTest: boolean }] }] }
 // Powers the Voices tab's "Suggested Pillars" list: ideas from step 2 of the wizard that Claude judged
-// do NOT fit any of the 12 pillars (stored by /api/map-pillars in pillar_discovery_inputs.ai_mapping.newIdeas).
+// do NOT fit any of the pillars (stored by /api/map-pillars in pillar_discovery_inputs.ai_mapping.newIdeas).
 // That table has no browser read path, so this reads it with the server-side key and returns only the
 // short idea phrases plus a display name per person ("Anonymous" unless they chose to be named). No ids,
 // emails, raw topic text or audio paths leave the server.

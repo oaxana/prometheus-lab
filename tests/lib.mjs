@@ -51,7 +51,7 @@ export async function runWizard(p, o = {}) {
   await p.waitForSelector('.wz-pillars');
   if (choice !== 'selected') { await p.click(`[data-fk=${choice}]`); }
   else if (pillars) {
-    for (let id = 1; id <= 12; id++) {
+    for (let id = 1; id <= 8; id++) {
       const card = p.locator(`.wz-pillars [data-fk="p${id}"]`).last();
       const on = (await card.getAttribute('aria-pressed')) === 'true';
       if (on !== pillars.includes(id)) await card.click();

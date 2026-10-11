@@ -85,11 +85,11 @@ async function fakeAnthropic(req, res, body) {
     const shortD = d.match(/^Participant [A-Z]+/)?.[0]?.toLowerCase() || d;
     if (synthMode === 'sparse') out = { commons: [{ pillarId: 2, strength: 'moderate', consensus: 150, themes: [], quotes: [], nuance: '', points: [{ point: 'p', voices: [a] }] }, { pillarId: 4, strength: 'bogus', consensus: -5, themes: ['x'.repeat(100)], quotes: ['q1', 'q2', 'q3'], nuance: '', points: [{ point: 'p4', voices: [c] }] }], contested: [{ pillarId: 3, spectrum: { left: '', right: 'x' }, positions: [{ stance: 's1', value: -20, voices: [a] }, { stance: 's2', value: 300, voices: [c] }], tension: '' }], gaps: [{ pillarId: 5, note: 'n', suggestions: ['1', '2', '3', '4', '5'] }] };
     else out = {
-    commons: [{ pillarId: 10, strength: 'strong', consensus: 90, themes: ['Disclosure first', 'No deepfakes'], quotes: ['AI must say what it is. <u>Always</u>.'], nuance: 'Agreement is <i>strongest</i> on disclosure.', points: [
+    commons: [{ pillarId: 8, strength: 'strong', consensus: 90, themes: ['Disclosure first', 'No deepfakes'], quotes: ['AI must say what it is. <u>Always</u>.'], nuance: 'Agreement is <i>strongest</i> on disclosure.', points: [
       { point: 'Everyone wants <b>disclosure</b>.', voices: [c, a, d, 'Invented source'] },
       { point: `No deepfakes, says ${shortD}.`, voices: [a, d] }] }],
     contested: [{ pillarId: 1, spectrum: { left: 'Strict opt-in', right: 'Signage + opt-out' }, positions: [{ stance: 'Strict opt-in', value: 10, voices: [c] }, { stance: 'Signage + opt-out', value: 80, voices: [a, bb] }], tension: 'Consent vs practicality' }],
-    gaps: [{ pillarId: 6, note: 'Nobody spoke to <i>environment</i>.', suggestions: ['Digital <b>MOOP</b> rules', 'Energy budgets for AI on playa'] }, { pillarId: 11, note: 'Default world is unaddressed.', suggestions: [] }] };
+    gaps: [{ pillarId: 7, note: 'Nobody spoke to <i>environment</i>.', suggestions: ['Digital <b>MOOP</b> rules', 'Energy budgets for AI on playa'] }, { pillarId: 2, note: 'Coexistence is unaddressed.', suggestions: [] }] };
   }
   else if (props.pillars) out = { pillars: [3, 1, 99, 3], summary: 'A short summary.' };
   else out = { summary: 'A short summary.' };
@@ -356,6 +356,8 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__wipeusers') { db.authUsers.clear(); return json(res, 200, {}); } // as a server restart does: saved logins become invalid
     if (url.pathname.startsWith('/anthropic/')) return fakeAnthropic(req, res, await readBody(req));
     if (url.pathname === '/__metrics') { metricsMode = url.searchParams.get('m'); return json(res, 200, { metricsMode }); }
+    // Gives the latest saved version's first finding another pillar name (e.g. one of the original 12) and back.
+    if (url.pathname === '/__pillarname') { const v = db.synthesisVersions.at(-1); v.commons[0].pillar = url.searchParams.get('v'); return json(res, 200, { pillar: v.commons[0].pillar }); }
     if (url.pathname === '/__synth') { synthMode = url.searchParams.get('m'); return json(res, 200, { synthMode }); }
     if (url.pathname === '/__idea') { mapIdeas = (url.searchParams.get('v') || '').split('|').filter(Boolean); return json(res, 200, { mapIdeas }); }
     if (url.pathname === '/__map') { mapMode = url.searchParams.get('m'); return json(res, 200, { mapMode }); }

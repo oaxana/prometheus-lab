@@ -1,6 +1,6 @@
 # Prometheus Lab
 
-A private web app where a crew can contribute anonymous (or named) positions on how humans and AI should behave together, for the **Burning Man AI Constitution** project. Claude summarizes each submission and tags it to 12 constitutional pillars. The project lead can then run an AI **synthesis** that sorts everything into **The Commons** (where voices agree), **Contested Ground** (where they diverge, and who holds which position) and **The Gaps** (pillars nobody addressed).
+A private web app where a crew can contribute anonymous (or named) positions on how humans and AI should behave together, for the **Burning Man AI Constitution** project. Claude summarizes each submission and tags it to 8 constitutional pillars (consolidated from the original 12 on 2026-10-11). The project lead can then run an AI **synthesis** that sorts everything into **The Commons** (where voices agree), **Contested Ground** (where they diverge, and who holds which position) and **The Gaps** (pillars nobody addressed).
 
 - **Live site:** https://prometheus-lab-xi.vercel.app (password-protected, crew only)
 - **Status:** the verified-participant version is deployed in production. The first real-account smoke test passed; second-account isolation and final test-data cleanup remain. See [Project status](#project-status--where-we-left-off).
@@ -32,7 +32,7 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 **For everyone on the crew**
 - **Password gate** on the landing page; nothing is reachable without it.
 - **Five tabs:** Home (landing page with live counts), Pillars, Submit, Voices, Synthesis. Pillars, Voices and Synthesis stay locked (dimmed, lock icon, gentle message) until the signed-in participant has one non-test contribution; the project lead is never locked out.
-- **Pillars:** the 12 constitutional pillars with expandable sub-topics.
+- **Pillars:** the 8 constitutional pillars with their guiding questions.
 - **Submit** through a seven-step wizard: what you're contributing (my own thoughts / a conversation or transcript / a document or paper) → blank-slate topics (own thoughts only) → AI pillar mapping → format → the contribution (+ title for a transcript/document) → review → confirmation + your history. A transcript's speakers are detected from the text itself (meeting-tool exports like `**Name** *[10:23]*: …` work as-is), names are cleaned to the person's name, and the review step lists "Speakers found" before saving; each speaker becomes a separate voice. A contribution can be **typed**, **recorded** (voice note, transcribed in the browser; the recording is kept), or **uploaded**: `.pdf` (scanned PDFs are read by Claude), `.doc`/`.docx`, `.ppt`/`.pptx` (slide text in deck order plus speaker notes), images (`.png`/`.jpg`/`.gif`, read by Claude vision), plain text `.md`/`.txt` (read in the browser; the text itself is the stored original), or a **Google Docs / Google Slides link** (file must be shared "Anyone with the link can view"). Old binary `.doc`/`.ppt` files are stored but cannot be read in the browser, so the wizard asks for a short note instead.
 - **Pillars:** the wizard asks first what matters to *you* (before showing the draft pillars, to avoid anchoring), then Claude maps that answer onto the draft pillars and flags ideas that fit none. You can pick several pillars, "Not sure yet" (Claude picks), or "Something else entirely".
 - **Edit your past submissions** from the wizard's last step: your original text opens, and saving re-runs the AI summary.
@@ -79,7 +79,7 @@ public/                  static site (this folder is what Vercel serves)
   app.js                 the UI: render functions, file parsing helpers, Supabase + API calls
   wizard.js              the seven-step submission wizard (state `W`, recorder, uploader, history/edit)
   styles.css             design tokens + styles (dark primary, fire-amber accent, light via prefers-color-scheme)
-  pillars.js             the 12 pillars (names, emoji, sub-topics)
+  pillars.js             the 8 pillars (names, emoji, guiding questions) + the original 12 names for old synthesis versions
   config.js              Supabase URL + anon key (public by design)
 api/                     Vercel serverless functions
   _shared.js             model name, pillar names, Claude client, error handling ("_" = not a route)

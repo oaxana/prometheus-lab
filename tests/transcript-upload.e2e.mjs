@@ -1,7 +1,7 @@
 // A transcript submitted as an uploaded .md file (meeting-tool export) in a real browser:
 // the "what matters to you" step is skipped, speakers are cleaned and listed before saving,
 // and the text file is stored as the source text (not copied to Storage).
-import { launch } from './lib.mjs';
+import { launch, openSubs } from './lib.mjs';
 const B = 'http://localhost:4173'; let pass = 0, total = 0;
 const check = (n, ok, x = '') => { total++; if (ok) pass++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const b = await launch();
@@ -48,9 +48,16 @@ check('the full .md text is stored as the source original', src.source_type === 
 check('one contribution per cleaned speaker', db.submissions.filter((s) => s.source_id === src.id).length === 3 && db.sourceContributors.filter((x) => x.source_id === src.id).map((x) => x.source_label).join('|') === "Jordan Lee|Robin O'Hara|Casey Park");
 check('a text file is not copied to Storage', db.objects.length === 0);
 
+// "Mine only" is your own thoughts: the uploader manages these 3 speaker voices but none of them is the uploader
+await p.click('nav button:has-text("Voices")'); await p.waitForSelector('.toggle-row:has-text("Mine only")'); await openSubs(p);
+check('Voices: the 3 speakers are listed, but "Mine only" counts 0 for the uploader', (await p.locator('.submission-card').count()) === 3 && (await p.locator('.toggle-row:has-text("Mine only")').innerText()).replace(/\s+/g, ' ').trim() === 'Mine only (0)');
+await p.click('.toggle-row:has-text("Mine only")'); await openSubs(p);
+check('"Mine only" on: no speaker cards', (await p.locator('.submission-card').count()) === 0);
+await p.click('.toggle-row:has-text("Mine only")'); await p.click('nav button:has-text("Submit")');
+
 // A saved login the server no longer accepts: ask to verify again instead of a dead-end error, keep the entry
 const dialogs = []; p.removeAllListeners('dialog'); p.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
-await p.click('button:has-text("+ Submit another")'); await p.waitForSelector('#wz-start');
+await p.waitForSelector('#wz-start');   // coming back to Submit after a saved entry starts a fresh one
 await p.click('#wz-start'); await p.click('[data-fk=dm-text]'); await p.fill('#discovery-text', 'Consent matters.'); await p.click(NEXT);
 await p.waitForSelector('.wz-pillars'); await p.click(NEXT); await p.click('[data-fk=m-text]'); await p.click(NEXT);
 await p.fill('#voice-text', 'Keep the stale-login text.'); await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and submit")');

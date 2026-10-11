@@ -27,23 +27,24 @@ await p.click('button:has-text("Create New Synthesis")'); await p.waitForSelecto
 // rendering: stats banner, then three levels that all start collapsed
 const settle = () => p.waitForTimeout(450);
 const stats = (await p.locator('.syn-stat').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-check('stats banner: voices, pillars covered, common ground, contested, gaps', stats.join('|') === 'Voices heard 4|Pillars covered 2 / 12|Common ground 1|Contested 1|Gaps 2', stats.join('|'));
+check('stats banner: voices, pillars covered, common ground, contested, gaps', stats.join('|') === 'Voices heard 4|Pillars covered 2 / 8|Common ground 1|Contested 1|Gaps 2', stats.join('|'));
+check('Home "Pillars covered" uses the same number as the Synthesis tab', (await (await fetch(B + '/api/metrics')).json()).pillarsCovered === 2);
 check('three coloured section groups, all collapsed (level 1)', (await p.locator('.syn-sec').count()) === 3 && (await p.locator('.syn-shead[aria-expanded=true]').count()) === 0 && (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0);
 const secColor = (k) => p.locator(`#acc-syn-${k} .syn-tag`).evaluate((e) => getComputedStyle(e).color);
 check('section colours: green / amber / blue (dark theme)', (await secColor('commons')) === 'rgb(74, 186, 122)' && (await secColor('contested')) === 'rgb(232, 169, 72)' && (await secColor('gaps')) === 'rgb(107, 138, 237)');
 await p.click('#acc-syn-commons .syn-shead'); await settle();
-check('section opens to reveal pillar rows; the pillar detail is still collapsed (level 2)', (await p.locator('#acc-syn-commons .syn-pillar').count()) === 1 && (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'false' && (await p.locator('#acc-body-syn-commons-10').evaluate((e) => e.getBoundingClientRect().height)) === 0);
+check('section opens to reveal pillar rows; the pillar detail is still collapsed (level 2)', (await p.locator('#acc-syn-commons .syn-pillar').count()) === 1 && (await p.locator('#acc-syn-commons-8 .syn-phead').getAttribute('aria-expanded')) === 'false' && (await p.locator('#acc-body-syn-commons-8').evaluate((e) => e.getBoundingClientRect().height)) === 0);
 check('chevron turns when opened', (await p.locator('#acc-syn-commons .syn-shead .rot').evaluate((e) => getComputedStyle(e).transform)) !== 'none');
-check('commons row: consensus bar 90% filled + pillar name + (3) participants pill', (await p.locator('#acc-syn-commons-10 .syn-meter i').evaluate((e) => e.style.width)) === '90%' && (await p.locator('#acc-syn-commons-10 .syn-pname').innerText()).includes('AI Presence, Identity & Immediacy') && (await p.locator('#acc-syn-commons-10 .sugg-count').innerText()) === '(3)');
-await p.locator('#acc-syn-commons-10 .sugg-count').click();
-check('tapping the pill lists participants: named + "Anonymous"', (await p.locator('#acc-syn-commons-10 .sugg-who').isVisible()) && (await p.locator('#acc-syn-commons-10 .sugg-who').innerText()) === 'Me, Persona 2, Anonymous');
+check('commons row: consensus bar 90% filled + pillar name + (3) participants pill', (await p.locator('#acc-syn-commons-8 .syn-meter i').evaluate((e) => e.style.width)) === '90%' && (await p.locator('#acc-syn-commons-8 .syn-pname').innerText()).includes('Governance & Accountability') && (await p.locator('#acc-syn-commons-8 .sugg-count').innerText()) === '(3)');
+await p.locator('#acc-syn-commons-8 .sugg-count').click();
+check('tapping the pill lists participants: named + "Anonymous"', (await p.locator('#acc-syn-commons-8 .sugg-who').isVisible()) && (await p.locator('#acc-syn-commons-8 .sugg-who').innerText()) === 'Me, Persona 2, Anonymous');
 await p.mouse.click(5, 5);
-await p.click('#acc-syn-commons-10 .syn-phead'); await settle();
-const cItems = p.locator('#acc-syn-commons-10 .syn-pts li');
+await p.click('#acc-syn-commons-8 .syn-phead'); await settle();
+const cItems = p.locator('#acc-syn-commons-8 .syn-pts li');
 check('detail (level 3): one bullet per agreed point with its holders', (await cItems.count()) === 2 && (await cItems.nth(0).innerText()).includes('— Me, Persona 2, 1 anonymous') && (await cItems.nth(1).innerText()).includes('— Persona 2, 1 anonymous'));
-check('detail: key themes, quote and nuance', (await p.locator('#acc-syn-commons-10 .syn-theme').allInnerTexts()).join('|') === 'Disclosure first|No deepfakes' && (await p.locator('#acc-syn-commons-10 .syn-quote').innerText()).includes('AI must say what it is') && (await p.locator('#acc-syn-commons-10 .syn-note').innerText()).includes('Agreement is <i>strongest</i>'));
+check('detail: key themes, quote and nuance', (await p.locator('#acc-syn-commons-8 .syn-theme').allInnerTexts()).join('|') === 'Disclosure first|No deepfakes' && (await p.locator('#acc-syn-commons-8 .syn-quote').innerText()).includes('AI must say what it is') && (await p.locator('#acc-syn-commons-8 .syn-note').innerText()).includes('Agreement is <i>strongest</i>'));
 check('prose: ephemeral participant label scrubbed from text', (await cItems.nth(1).innerText()).includes('says a participant') && !(await cItems.nth(1).innerText()).includes('Participant D'));
-check('LLM html still escaped (points, quotes, nuance)', (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;') && (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;u&gt;Always&lt;/u&gt;') && (await p.locator('#acc-syn-commons-10 .syn-detail').innerHTML()).includes('&lt;i&gt;strongest&lt;/i&gt;'));
+check('LLM html still escaped (points, quotes, nuance)', (await p.locator('#acc-syn-commons-8 .syn-detail').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;') && (await p.locator('#acc-syn-commons-8 .syn-detail').innerHTML()).includes('&lt;u&gt;Always&lt;/u&gt;') && (await p.locator('#acc-syn-commons-8 .syn-detail').innerHTML()).includes('&lt;i&gt;strongest&lt;/i&gt;'));
 // contested: spectrum with positioned, named dots
 await p.click('#acc-syn-contested .syn-shead'); await settle(); await p.click('#acc-syn-contested-1 .syn-phead'); await settle();
 check('contested row: bar shows the biggest camp (2 of 3 = 67%), pill (3)', (await p.locator('#acc-syn-contested-1 .syn-meter i').evaluate((e) => e.style.width)) === '67%' && (await p.locator('#acc-syn-contested-1 .sugg-count').innerText()) === '(3)');
@@ -62,16 +63,16 @@ const items = p.locator('#acc-syn-contested-1 .syn-pts li');
 check('contested positions listed with holders', (await items.count()) === 2 && (await items.nth(0).innerText()).includes('Strict opt-in') && (await items.nth(0).innerText()).includes('— Me') && (await items.nth(1).innerText()).includes('— Persona 2, Persona 3'));
 check('contested: core tension shown', (await p.locator('#acc-syn-contested-1 .syn-note').innerText()) === 'Consent vs practicality');
 // gaps: arrow bullets
-await p.click('#acc-syn-gaps .syn-shead'); await settle(); await p.click('#acc-syn-gaps-6 .syn-phead'); await p.click('#acc-syn-gaps-11 .syn-phead'); await settle();
+await p.click('#acc-syn-gaps .syn-shead'); await settle(); await p.click('#acc-syn-gaps-7 .syn-phead'); await p.click('#acc-syn-gaps-2 .syn-phead'); await settle();
 check('gaps: two simple rows (no bar, no participant pill)', (await p.locator('#acc-syn-gaps .syn-pillar').count()) === 2 && (await p.locator('#acc-syn-gaps .syn-meter, #acc-syn-gaps .sugg-count').count()) === 0);
-const arrows = await p.locator('#acc-syn-gaps-6 .syn-arrows li').allInnerTexts();
-check('gaps: arrow-prefixed suggestions, html escaped', arrows.length === 2 && (await p.locator('#acc-syn-gaps-6 .syn-arrows li').first().evaluate((e) => getComputedStyle(e, '::before').content)) === '"→"' && (await p.locator('#acc-syn-gaps-6 .syn-detail').innerHTML()).includes('&lt;b&gt;MOOP&lt;/b&gt;') && (await p.locator('#acc-syn-gaps-6 .syn-detail').innerHTML()).includes('&lt;i&gt;environment&lt;/i&gt;'), arrows.join('|'));
-check('gaps: no model suggestions -> falls back to the pillar’s own topics', (await p.locator('#acc-syn-gaps-11 .syn-arrows li').count()) === 4 && (await p.locator('#acc-syn-gaps-11 .syn-arrows li').first().innerText()).includes('Designing for playa first'));
+const arrows = await p.locator('#acc-syn-gaps-7 .syn-arrows li').allInnerTexts();
+check('gaps: arrow-prefixed suggestions, html escaped', arrows.length === 2 && (await p.locator('#acc-syn-gaps-7 .syn-arrows li').first().evaluate((e) => getComputedStyle(e, '::before').content)) === '"→"' && (await p.locator('#acc-syn-gaps-7 .syn-detail').innerHTML()).includes('&lt;b&gt;MOOP&lt;/b&gt;') && (await p.locator('#acc-syn-gaps-7 .syn-detail').innerHTML()).includes('&lt;i&gt;environment&lt;/i&gt;'), arrows.join('|'));
+check('gaps: no model suggestions -> falls back to the pillar’s own topics', (await p.locator('#acc-syn-gaps-2 .syn-arrows li').count()) === 4 && (await p.locator('#acc-syn-gaps-2 .syn-arrows li').first().innerText()).includes('When should AI advise'));
 check('no run-local participant labels visible anywhere', !/Participant [A-Z]/.test(await p.locator('main').innerText()));
 await p.evaluate(() => render());
-check('open/closed choices survive a redraw', (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'true' && (await p.locator('#acc-syn-gaps .syn-shead').getAttribute('aria-expanded')) === 'true');
+check('open/closed choices survive a redraw', (await p.locator('#acc-syn-commons-8 .syn-phead').getAttribute('aria-expanded')) === 'true' && (await p.locator('#acc-syn-gaps .syn-shead').getAttribute('aria-expanded')) === 'true');
 await p.click('#acc-syn-commons .syn-shead'); await settle();
-check('collapsing a section keeps what was open inside it', (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0 && (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'true');
+check('collapsing a section keeps what was open inside it', (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0 && (await p.locator('#acc-syn-commons-8 .syn-phead').getAttribute('aria-expanded')) === 'true');
 await p.click('#acc-syn-commons .syn-shead'); await settle();
 check('phone width: no sideways scrolling', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 const fam = await p.evaluate(() => [getComputedStyle(document.querySelector('.syn')).fontFamily, getComputedStyle(document.querySelector('.syn-tag')).fontFamily, getComputedStyle(document.querySelector('.syn-stat')).backgroundColor]);
@@ -115,6 +116,17 @@ check('status API without tests: the 3 test rows count as removed from v1', (awa
 const browserRead = await fetch(B + '/supabase/rest/v1/synthesis_versions?select=version,submission_ids', { headers: { apikey: 'anon-test' } });
 check('browser key cannot read the provenance columns', browserRead.status === 401);
 
+// the pillar list changed since the latest version (it names a pillar from the original 12): a new version is allowed
+const keepName = (await versions())[0].commons[0].pillar;
+await fetch(B + '/__pillarname?v=' + encodeURIComponent('AI Presence, Identity & Immediacy'));
+const stP = await statusApi();
+check('status API: an old pillar name in the latest version means "pillars changed", with no new contributions', stP.pending.pillarsChanged === true && stP.pending.changed === true && stP.pending.contributions === 0);
+await p.evaluate(() => { S.synStatusKey = ''; render(); }); await p.waitForSelector('.syn-status.pending');
+check('pillars-changed line shown, and the admin can create a new version', (await p.locator('.syn-status').innerText()).includes('The pillars have changed') && (await p.locator('button:has-text("Create New Synthesis")').count()) === 1);
+await fetch(B + '/__pillarname?v=' + encodeURIComponent(keepName));
+check('back to the current pillar name: nothing pending again', (await statusApi()).pending.changed === false);
+await p.evaluate(() => { S.synStatusKey = ''; render(); }); await p.waitForSelector('.syn-status:not(.pending)');
+
 // new material: one more from the existing anonymous participant, one from a brand-new person
 const newcomer = '22222222-2222-4222-8222-222222222222';
 await postService('/supabase/rest/v1/submissions', { pillars: [2], content: 'anon thought three', summary: 's', auto_tagged: false, is_test: false, participant_id: stranger, uid: null, display_name: '' });
@@ -146,7 +158,7 @@ const reqs = []; p.on('request', (r) => { if (r.url().includes('/api/synthesize'
 const callsV = await llmCalls();
 await p.selectOption('#syn-version', '1'); await p.waitForSelector('.syn-status.older');
 await p.click('#acc-syn-commons .syn-shead').catch(() => {});
-check('selecting v1 shows v1 exactly: its header and its stored pillars', (await meta()).endsWith('4 voices / 5 contributions') && (await p.locator('#acc-syn-commons-10').count()) === 1 && (await p.locator('#acc-syn-contested-1').count()) === 1);
+check('selecting v1 shows v1 exactly: its header and its stored pillars', (await meta()).endsWith('4 voices / 5 contributions') && (await p.locator('#acc-syn-commons-8').count()) === 1 && (await p.locator('#acc-syn-contested-1').count()) === 1);
 check('selecting an old version does not regenerate anything', reqs.length === 0 && (await llmCalls()) === callsV && (await versions()).length === 2);
 await p.click('button:has-text("Show the latest")');
 check('"Show the latest" returns to v2', (await meta()).endsWith('5 voices / 7 contributions') && (await p.locator('#syn-version').inputValue()) === '2' && (await p.locator('.syn-status.older').count()) === 0 && (await p.locator('#acc-syn-commons-2').count()) === 1);
@@ -162,6 +174,13 @@ await p.click('#acc-syn-commons-OldC .syn-phead'); await p.click('#acc-syn-conte
 check('legacy commons: bar from the strength label, pill counts people from the old voices list, summary shown', (await p.locator('#acc-syn-commons-OldC .syn-meter i').evaluate((e) => e.style.width)) === '85%' && (await p.locator('#acc-syn-commons-OldC .sugg-count').innerText()) === '(3)' && (await p.locator('#acc-syn-commons-OldC .syn-pts li').first().innerText()).includes('Old summary'));
 check('legacy gaps (no pillarId, no suggestions) show just the note', (await p.locator('#acc-syn-gaps-OldG .syn-arrows').count()) === 0 && (await p.locator('#acc-syn-gaps-OldG .syn-note').innerText()) === 'old note');
 check('legacy string positions render as Position N and there is no spectrum', (await p.locator('#acc-syn-contested-Old .syn-pts li .syn-by').first().innerText()) === '— Position 1' && (await p.locator('#acc-syn-contested-Old .syn-pts li').first().innerText()).includes('A view') && (await p.locator('#acc-syn-contested-Old .spec-track').count()) === 0);
+
+// a version made with the original 12 pillars keeps its own names, emojis and "/ 12"
+await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 98, timestamp: Date.now(), count: 2, submissionCount: 2 }, ...S.synVersions]; S.synView = null;
+  S.synBodies[98] = { commons: [{ pillarId: 10, pillar: 'AI Presence, Identity & Immediacy', consensus: 70, points: [{ point: 'p', voices: ['A'] }], participants: ['A'] }], contested: [], gaps: [{ pillarId: 11, pillar: 'The Default World Bridge', note: 'n', suggestions: ['s'] }] }; render(); });
+await p.click('#acc-syn-commons .syn-shead'); await p.click('#acc-syn-gaps .syn-shead'); await settle();
+check('old 12-pillar version: its own pillar names with their old emojis, out of 12', (await p.locator('#acc-syn-commons-10 .syn-pname').innerText()) === '🤖 AI Presence, Identity & Immediacy' && (await p.locator('#acc-syn-gaps-11 .syn-pname').innerText()) === '🌉 The Default World Bridge' && (await p.locator('.syn-stat:has-text("Pillars covered") .syn-num').innerText()).replace(/\s+/g, ' ') === '1 / 12');
+check('a version made with the new pillars is out of 8', await p.evaluate(() => synPillarTotal({ commons: [{ pillar: 'Governance & Accountability' }] })) === 8);
 
 // test personas are gone
 check('no "Testing as" persona switcher or persona code left', (await p.locator('.persona-row').count()) === 0 && (await p.evaluate(() => typeof setPersona === 'undefined' && typeof PERSONAS === 'undefined')));

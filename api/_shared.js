@@ -8,21 +8,18 @@ export const MODEL = 'claude-sonnet-5-5';
 // Server-side copy of the pillar names (ids + names only). Keep in sync with public/pillars.js.
 export const PILLARS = [
   { id: 1, name: 'Consent, Privacy & Data Sovereignty' },
-  { id: 2, name: 'Human Agency & Autonomy' },
-  { id: 3, name: 'Access, Equity & Inclusion' },
-  { id: 4, name: 'Safety, Care & Wellbeing' },
-  { id: 5, name: 'Art, Creativity & Self-Expression' },
-  { id: 6, name: 'Environmental Stewardship' },
-  { id: 7, name: 'Gifting, Anti-Commodification & Open Source' },
-  { id: 8, name: 'Community Governance & Power' },
-  { id: 9, name: 'Education & AI Literacy' },
-  { id: 10, name: 'AI Presence, Identity & Immediacy' },
-  { id: 11, name: 'The Default World Bridge' },
-  { id: 12, name: 'Hard Constraints & Bright Lines' },
+  { id: 2, name: 'Autonomy & Coexistence' },
+  { id: 3, name: 'Inclusion & Access' },
+  { id: 4, name: 'Safety & Wellbeing' },
+  { id: 5, name: 'Creative Expression & Attribution' },
+  { id: 6, name: 'Gifting & Non-Extraction' },
+  { id: 7, name: 'Environmental Stewardship' },
+  { id: 8, name: 'Governance & Accountability' },
 ];
 
 export const PILLAR_LIST = PILLARS.map((p) => `${p.id}. ${p.name}`).join('\n');
 export const pillarName = (id) => PILLARS.find((p) => p.id === id)?.name;
+export const isPillarId = (id) => PILLARS.some((p) => p.id === id);
 
 let _client;
 export function anthropic() {

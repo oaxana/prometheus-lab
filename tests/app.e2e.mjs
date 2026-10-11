@@ -19,11 +19,12 @@ await page.goto(B);
 await page.waitForSelector('.stat-num');
 await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent !== '—');
 check('home renders 3 live stats', (await page.locator('.stat').count()) === 3);
-check('home shows 0 voices / 0 of 12 pillars / 0 contributions', (await page.locator('.stat-num').allInnerTexts()).join('|') === '0|0/12|0');
-check('home has hero headline, CTA, trust line, 3 step cards, context + trust blocks, footer',
-  (await page.locator('h1').innerText()).includes('humans and AI') && await page.locator('.hero-cta:has-text("Add your voice")').isVisible() &&
-  await page.locator('.hero-trust:has-text("Anonymous by default")').isVisible() && (await page.locator('.step-card').count()) === 3 &&
-  await page.locator('h2:has-text("What\'s a constitution here?")').isVisible() && await page.locator('h2:has-text("Built on trust")').isVisible() &&
+check('home shows 0 voices / 0 of 8 pillars / 0 contributions', (await page.locator('.stat-num').allInnerTexts()).join('|') === '0|0/8|0');
+check('home has hero headline, "Start here" CTA, no trust line under it, 3 step cards, context + trust blocks, footer',
+  (await page.locator('h1').innerText()).includes('humans and AI') && await page.locator('.hero-cta:has-text("Start here")').isVisible() &&
+  (await page.locator('main :text("Anonymous by default")').count()) === 0 && (await page.locator('.step-card').count()) === 3 &&
+  await page.locator('h2:has-text("What\'s a constitution here?")').isVisible() && await page.locator('.trust-card h2:has-text("Built on trust")').isVisible() &&
+  await page.locator('.trust-card :text("Your email stays private.")').isVisible() &&
   await page.locator('.home-footer:has-text("AI-cautious voices both welcome")').isVisible());
 check('legacy browser uid is no longer created', (await page.evaluate(() => localStorage.getItem('prometheus-lab-uid'))) === null);
 check('no horizontal scroll at phone width', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
@@ -33,19 +34,24 @@ await page.screenshot({ path: SHOTS + 'screens/shot-home.png', fullPage: true })
 check('Pillars, Voices and Synthesis show locked (dimmed, lock icon); Home and Submit do not',
   (await page.locator('nav button.locked').count()) === 3 && (await page.locator('nav button.locked .ti-lock').count()) === 3 &&
   (await page.locator('nav button.locked').allInnerTexts()).join().includes('Voices') && !(await page.locator('nav button:has-text("Submit")').getAttribute('class')).includes('locked') && (await page.locator('nav button.locked').first().evaluate((e) => getComputedStyle(e).opacity)) === '0.45');
-await page.click('nav button:has-text("Pillars")', { force: true });   // aria-disabled, but still clickable for a real person
-check('locked Pillars: gentle toast, stays on Home', (await page.locator('.toast').innerText()) === 'Share your voice first, then explore the pillars' && await page.locator('.hero-cta').isVisible());
-await page.click('nav button:has-text("Voices")', { force: true });
-check('locked Voices: its own toast, stays on Home', (await page.locator('.toast').innerText()) === 'Share your voice first to see what others have shared' && await page.locator('.hero-cta').isVisible());
-await page.click('nav button:has-text("Synthesis")', { force: true });
-check('locked Synthesis: its own toast, no stacked toasts, stays on Home', (await page.locator('.toast').count()) === 1 && (await page.locator('.toast').innerText()) === 'Share your voice first to unlock this' && await page.locator('.hero-cta').isVisible());
-await page.click('.hero-cta');
-check('"Add your voice" opens the Submit tab', await page.locator('.verify-card').isVisible());
-await page.click('nav button:has-text("Home")'); await page.click('.step-card.clickable');
+const lockedView = async (h) => await page.locator('.locked-panel h2:has-text("Unlocks after your first submission")').isVisible() && await page.locator(`.locked-ghost h2:has-text("${h}")`).count() === 1;
+await page.click('nav button:has-text("Pillars")');
+check('locked Pillars: opens a faded placeholder with the unlock message, no real pillar names', await lockedView('The Pillars') && (await page.locator('main :text("Consent, Privacy")').count()) === 0 && (await page.locator('.locked-ghost').evaluate((e) => +getComputedStyle(e).opacity)) < 0.3);
+await page.click('nav button:has-text("Voices")');
+check('locked Voices: placeholder only, no real cards', await lockedView('All Voices') && (await page.locator('.submission-card').count()) === 0);
+await page.click('nav button:has-text("Synthesis")');
+check('locked Synthesis: placeholder only, no create button', await lockedView('Collective Synthesis') && (await page.locator('button:has-text("Create")').count()) === 0);
+await page.click('.locked-panel button:has-text("Start here")');
+check('"Start here" on a locked tab opens the Submit tab', await page.locator('.verify-card').isVisible());
+await page.click('nav button:has-text("Home")'); await page.click('.hero-cta');
+check('"Start here" opens the Submit tab', await page.locator('.verify-card').isVisible());
+await page.click('nav button:has-text("Home")'); await page.click('.step-card >> nth=0');
 check('step 1 card ("Share") opens the Submit tab', await page.locator('.verify-card').isVisible());
+await page.click('nav button:has-text("Home")'); await page.click('.step-card >> nth=1');
+check('step 2 card ("Map") opens Pillars (locked placeholder here)', await lockedView('The Pillars'));
+await page.click('nav button:has-text("Home")'); await page.click('.step-card >> nth=2');
+check('step 3 card ("Synthesize") opens Synthesis (locked placeholder here)', await lockedView('Collective Synthesis'));
 await page.click('nav button:has-text("Home")');
-await page.click('.step-card >> nth=1');
-check('step 2 and 3 cards are not links', await page.locator('.hero-cta').isVisible());
 
 // Submit tab: typed text must survive toggling anonymous + a background refresh
 await page.click('nav button:has-text("Submit")');
@@ -78,12 +84,12 @@ check('tabs unlock right after the first submission, without a reload', (await p
 check('history lists the new submission with its summary', (await page.locator('.wz-hrow .wz-hsum').first().innerText()) === 'A short summary.');
 await page.click('nav button:has-text("Pillars")');
 await page.click('button:has-text("Expand all")');
-check('pillars expand all', (await page.locator('.pillar-ref-body.open').count()) === 12);
+check('pillars expand all', (await page.locator('.pillar-ref-body.open').count()) === 8);
 await page.screenshot({ path: SHOTS + 'screens/shot-pillars.png', fullPage: false });
 await page.click('nav button:has-text("Home")');
 await page.waitForFunction(() => document.querySelector('.stat-num')?.textContent === '1');
 const realRows = (await (await fetch(B + '/__db')).json()).submissions.filter((r) => !r.is_test);
-check('home counts refresh after a submission (1 voice, pillars covered, 1 contribution)', (await page.locator('.stat-num').allInnerTexts()).join('|') === `1|${new Set(realRows.flatMap((r) => r.pillars)).size}/12|1`);
+check('home counts refresh after a submission (1 voice, 1 contribution); pillars covered stays 0 until a synthesis exists', realRows.length === 1 && (await page.locator('.stat-num').allInnerTexts()).join('|') === '1|0/8|1');
 await page.click('nav button:has-text("Voices")'); await page.waitForSelector('.submission-card'); await openSubs(page);
 check('card shows AI summary, not raw text', (await page.locator('.summary-text').first().innerText()) === 'A short summary.');
 check('auto-tagged badge + pillar pills (1 and 3)', (await page.locator('.pill.auto').count()) === 2);
@@ -105,8 +111,9 @@ const ctx2 = await browser.newContext({ viewport: { width: 420, height: 900 } })
 const p2 = await ctx2.newPage();
 await p2.goto(B); await p2.waitForSelector('.hero-cta');
 check('other user with no submission of their own is locked out of Pillars/Voices/Synthesis', (await p2.locator('nav button.locked').count()) === 3);
-await p2.click('nav button:has-text("Voices")', { force: true });
-check('locked Voices does not navigate for the other user', await p2.locator('.hero-cta').isVisible() && (await p2.locator('.submission-card').count()) === 0);
+await p2.click('nav button:has-text("Voices")');
+check('locked Voices shows the placeholder, no cards, for the other user', await p2.locator('.locked-panel').isVisible() && (await p2.locator('.submission-card').count()) === 0);
+await p2.click('nav button:has-text("Home")');
 // the lock is a courtesy; the real privacy boundary is the server, so check what the database hands another browser
 const rows2 = await p2.evaluate(async () => (await sb.rpc('list_submissions', {})).data);
 check('other user (server level): sees the summary but never raw text, "yours" or owner-only fields', rows2.length === 1 && rows2[0].summary === 'A short summary.' && rows2[0].mine === false && rows2[0].content === null && rows2[0].file_url === null);

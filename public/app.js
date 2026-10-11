@@ -125,35 +125,51 @@ async function editDisplayName(){
   catch(e){alert('Error: '+(e.message||'could not save name'));}
 }
 // ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
-const LOCKED_TABS={pillars:'Share your voice first, then explore the pillars',voices:'Share your voice first to see what others have shared',synthesis:'Share your voice first to unlock this'};
+const LOCKED_TABS={pillars:'Share your own thinking first, then explore the pillars.',voices:'Share your voice first, then see what others have shared.',synthesis:'Share your voice first, then see where the group agrees, disagrees and has gaps.'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
 // Only a logged-in admin who switched on "Unlock all tabs" (Admin page) skips this.
 function hasContributed(){return !!S.session&&S.submissions.some(s=>s.mine&&!s.isTest);}
 function isLocked(v){return !!LOCKED_TABS[v]&&!(S.isAdmin&&S.unlockTabs)&&!hasContributed();}
 function nav(v){
-  if(isLocked(v)){document.querySelector('.toast')?.remove();showToast(LOCKED_TABS[v]);return;}
   if(v!=='submit')wzStopAllRec();                 // a recording never keeps running behind another tab
   if(v==='submit'&&W.step===7)wzReset();          // coming back after a submission starts a fresh one
   S.view=v;render();window.scrollTo(0,0)}
 // Test submissions are an admin tool: everyone else never sees them, or any switch or wording about them.
 function showingTests(){return S.isAdmin&&S.showTests;}
-function filteredSubs(){let s=S.submissions;if(!showingTests())s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(x=>x.mine);return s;}
+// "Mine only" means your own thoughts. Transcript speakers and document authors you uploaded are other people's voices,
+// even though your account manages (edits/deletes) them.
+const ownVoice=s=>s.mine&&s.sourceType==='individual';
+function filteredSubs(){let s=S.submissions;if(!showingTests())s=s.filter(x=>!x.isTest);if(S.showMine)s=s.filter(ownVoice);return s;}
 function setupNeeded(m){m.innerHTML=`<div class="card"><h3>Setup needed</h3><p style="font-size:14px;color:var(--muted)">This app isn't connected to a database yet. Add your Supabase URL and anon key to <strong>public/config.js</strong>, then reload.</p></div>`;}
+
+// A locked tab opens to a faded placeholder of its layout (grey bars, never the real content: the pillars must stay
+// unseen until wizard step 2 has captured what someone thinks unprompted) with the unlock message on top.
+function renderLocked(m,v){
+  const bars=ws=>ws.map(w=>`<span class="sk-bar" style="width:${w}%"></span>`).join('');
+  const card=ws=>`<div class="sk-card">${bars(ws)}</div>`;
+  const ghost={
+    pillars:`<h2>The Pillars</h2>${[70,55,80,62,48,74].map(w=>`<div class="sk-card sk-row"><span class="sk-dot"></span>${bars([w])}</div>`).join('')}`,
+    voices:`<h2>All Voices</h2>${card([30,95,88,60])}${card([25,90,70])}${card([35,92,85,50])}`,
+    synthesis:`<h2>Collective Synthesis</h2><div class="sk-stats">${'<span class="sk-card"></span>'.repeat(5)}</div>${card([22,90,75])}${card([28,85,60])}${card([18,80,70])}`}[v];
+  m.innerHTML=`<div class="locked-view"><div class="locked-ghost" aria-hidden="true">${ghost}</div>
+    <div class="locked-panel"><i class="ti ti-lock locked-icon" aria-hidden="true"></i><h2>Unlocks after your first submission</h2><p>${LOCKED_TABS[v]}</p>
+    <button class="btn btn-amber" onclick="nav('submit')">Start here</button></div></div>`;
+}
 
 function render(){
   // Keep whatever is typed in the form across re-renders.
   const n=document.getElementById('display-name');if(n)S.displayName=n.value;
   wzSyncFields();
-  if(isLocked(S.view)&&S.loaded)S.view='home';   // e.g. the only real submission was deleted or marked as test while on this tab
   const fk=document.activeElement?.dataset?.fk;   // keyboard users keep their place after a redraw
   document.getElementById('nav').innerHTML=[
     {id:'home',label:'Home',icon:'🔥'},{id:'pillars',label:'Pillars',icon:'📋'},
     {id:'submit',label:'Submit',icon:'✍️'},{id:'voices',label:'Voices',icon:'👁'},
     {id:'synthesis',label:'Synthesis',icon:'⚡'}
   ].map(t=>{const lk=isLocked(t.id);
-    return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-disabled="true" aria-label="${t.label} (locked: ${LOCKED_TABS[t.id]})"`:''} onclick="nav('${t.id}')">${t.icon} ${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</button>`;}).join('');
+    return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-label="${t.label} (unlocks after your first submission)"`:''} onclick="nav('${t.id}')">${t.icon} ${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</button>`;}).join('');
   const m=document.getElementById('main');
-  ({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis,admin:renderAdmin})[S.view]?.(m);
+  if(isLocked(S.view))renderLocked(m,S.view);
+  else({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis,admin:renderAdmin})[S.view]?.(m);
   if(S.view==='submit')wzAfterRender();
   if(fk)document.querySelector(`#main [data-fk="${fk}"]`)?.focus({preventScroll:true});
 }
@@ -175,21 +191,19 @@ function renderHome(m){
   const key=S.submissions.filter(s=>!s.isTest).length;
   if(S.loaded&&S.metricsKey!==key&&S.metricsState!=='loading')fetchMetrics(key);
   const mt=S.metrics,num=v=>mt?String(v):'—';
-  const stats=S.metricsState==='failed'&&!mt?'':`<div class="stat-row home-stats" aria-label="Live counts"><div class="stat"><div class="stat-num">${num(mt?.voices)}</div><div class="stat-label">Voices heard</div></div><div class="stat"><div class="stat-num">${mt?mt.pillarsCovered+'/12':'—'}</div><div class="stat-label">Pillars covered</div></div><div class="stat"><div class="stat-num">${num(mt?.contributions)}</div><div class="stat-label">Contributions</div></div></div>`;
-  const step=(n,title,text,go)=>{const inner=`<span class="step-num">${n}</span><span class="step-title">${title}</span><span class="step-text">${text}</span>`;
-    return go?`<button class="step-card clickable" onclick="nav('submit')">${inner}</button>`:`<div class="step-card">${inner}</div>`;};
+  const stats=S.metricsState==='failed'&&!mt?'':`<div class="stat-row home-stats" aria-label="Live counts"><div class="stat"><div class="stat-num">${num(mt?.voices)}</div><div class="stat-label">Voices heard</div></div><div class="stat"><div class="stat-num">${mt?mt.pillarsCovered+'/'+PILLARS.length:'—'}</div><div class="stat-label">Pillars covered</div></div><div class="stat"><div class="stat-num">${num(mt?.contributions)}</div><div class="stat-label">Contributions</div></div></div>`;
+  const step=(n,title,text,go)=>`<button class="step-card clickable" onclick="nav('${go}')"><span class="step-num">${n}</span><span class="step-title">${title}</span><span class="step-text">${text}</span></button>`;
   m.innerHTML=`<section class="hero">
     <p class="hero-eyebrow">Prometheus Lab</p>
     <h1>Help shape how <span class="hl">humans and AI</span> live together</h1>
     <p class="hero-sub">We're writing a constitution for the playa — and beyond. Your perspective matters. Two minutes. Submit as many times as you like.</p>
-    <button class="btn btn-amber hero-cta" onclick="nav('submit')"><i class="ti ti-flame" aria-hidden="true"></i> Add your voice</button>
-    <div class="hero-trust"><span><i class="ti ti-eye-off" aria-hidden="true"></i> Anonymous by default</span><span><i class="ti ti-shield-check" aria-hidden="true"></i> Your email stays private</span></div>
+    <button class="btn btn-amber hero-cta" onclick="nav('submit')"><i class="ti ti-flame" aria-hidden="true"></i> Start here</button>
   </section>
   ${stats}
   <div class="section-divider"><span>How it works</span></div>
-  <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe',true)}${step(2,'Map','AI connects your ideas to 12 constitutional pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps')}</div>
+  <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe','submit')}${step(2,'Map',`AI connects your ideas to ${PILLARS.length} constitutional pillars`,'pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps','synthesis')}</div>
   <div class="card info-card"><h2 class="info-q">What's a constitution here?</h2><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
-  <div class="card info-card trust-card"><i class="ti ti-shield-lock trust-icon" aria-hidden="true"></i><div><h2 class="info-q">Built on trust</h2><p>Your email is used only to make sure each voice counts once, and it is never shown to anyone or sent to the AI. Even anonymous submissions are tied to a real person, so every perspective carries equal weight. Your raw words stay private to you. Only AI-generated summaries are shared with the group.</p></div></div>
+  <div class="card info-card trust-card"><i class="ti ti-shield-lock trust-icon" aria-hidden="true"></i><div><h2 class="info-q">Built on trust</h2><p><strong class="trust-lead">Your email stays private.</strong> It is used only to make sure each voice counts once, and it is never shown to anyone or sent to the AI. Even anonymous submissions are tied to a real person, so every perspective carries equal weight. Your raw words stay private to you. Only AI-generated summaries are shared with the group.</p></div></div>
   <p class="home-footer">A project by burners, technologists, artists, and skeptics.<br>Pro-AI and AI-cautious voices both welcome.</p>
   <p class="admin-link-row"><button class="admin-link" onclick="nav('admin')">Admin</button></p>`;
 }
@@ -200,7 +214,7 @@ function renderPillars(m){
       <span class="num">${p.id}</span><span class="emoji-lg">${p.emoji}</span><span class="title">${p.name}</span><span class="arrow ${open?'open':''}">▶</span></div>
       <div class="pillar-ref-body ${open?'open':''}"><ul>${p.bullets.map(b=>`<li>${b}</li>`).join('')}</ul>
       ${p.principle?`<div class="principle">Connects to: ${p.principle}</div>`:''}</div></div>`;}).join('');
-  m.innerHTML=`<h2>The 12 Pillars</h2><p class="subtitle">Every topic the constitution could address. Tap to expand. Pick 1–3 when you submit.</p>
+  m.innerHTML=`<h2>The ${PILLARS.length} Pillars</h2><p class="subtitle">Every topic the constitution could address. Tap to expand. Pick 1–3 when you submit.</p>
   <div style="margin-bottom:16px"><button class="btn-secondary btn" style="font-size:12px;padding:6px 14px" onclick="toggleAllPillars()">${S.openPillars.size===PILLARS.length?'Collapse all':'Expand all'}</button></div>${items}`;
 }
 
@@ -282,8 +296,8 @@ function renderVoices(m){
   const subs=filteredSubs();
   // Counts follow the active filters: tests only count while "Show tests" is on, and the header also follows "Mine only".
   const visible=showingTests()?S.submissions:allReal;
-  const myCount=visible.filter(s=>s.mine).length;
-  const scope=S.showMine?visible.filter(s=>s.mine):visible;
+  const myCount=visible.filter(ownVoice).length;
+  const scope=S.showMine?visible.filter(ownVoice):visible;
   const nReal=scope.filter(s=>!s.isTest).length,nTest=scope.length-nReal;
   const sugKey=S.submissions.length;
   if(S.loaded&&S.suggestedKey!==sugKey&&S.suggestedState!=='loading')fetchSuggested(sugKey);
@@ -361,7 +375,15 @@ function synContested(c){
   return{name:c.pillar,id:c.pillarId,pct:Number.isFinite(c.consensus)?c.consensus:(people.length?Math.round(100*biggest/people.length):0),
     people,positions,tension:c.tension||'',spectrum:c.spectrum||null};
 }
-const pillarEmoji=id=>PILLARS.find(p=>p.id===id)?.emoji||'';
+// Saved versions keep the pillar names they were made with, so look pillars up by name: current list first, then the
+// original 12 (versions from before the 2026-10-11 consolidation). Matching by id would mix up old and new pillars.
+const pillarByName=name=>PILLARS.find(p=>p.name===name)||LEGACY_PILLARS.find(p=>p.name===name);
+const pillarEmoji=name=>pillarByName(name)?.emoji||'';
+// How many pillars the version was made against: the current list unless a finding names a pillar only the old list has.
+function synPillarTotal(syn){
+  const names=[...(syn.commons||[]),...(syn.contested||[]),...(syn.gaps||[])].map(f=>f.pillar).filter(Boolean);
+  return names.some(n=>!PILLARS.some(p=>p.name===n))?LEGACY_PILLARS.length:PILLARS.length;
+}
 // (N) pill; hovering it (desktop) or tapping it (phone) lists the participants. Must sit outside the row's header button.
 function synPill(people){
   if(!people.length)return'';
@@ -397,14 +419,14 @@ function synPillarRow(kind,c){
   const id=`syn-${kind}-${c.id??String(c.name).replace(/\W+/g,'-')}`,open=!!S.acc[id];
   const meter=`<span class="syn-meter" role="img" aria-label="${kind==='commons'?'Consensus':'Largest group'} ${c.pct}%"><i style="width:${c.pct}%"></i></span>`;
   return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow who-host">
-    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span>${meter}<span class="syn-pname">${pillarEmoji(c.id)} ${esc(c.name)}</span></button>${synPill(c.people)}</div>
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span>${meter}<span class="syn-pname">${pillarEmoji(c.name)} ${esc(c.name)}</span></button>${synPill(c.people)}</div>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}>${synDetail(kind,c)}</div></section>`;
 }
 function synGapRow(g){
   const id=`syn-gaps-${g.pillarId??String(g.pillar).replace(/\W+/g,'-')}`,open=!!S.acc[id];
-  const sugg=g.suggestions?.length?g.suggestions:(PILLARS.find(p=>p.id===g.pillarId)?.bullets||[]).slice(0,4);   // older results: the pillar's own topics
+  const sugg=g.suggestions?.length?g.suggestions:(PILLARS.find(p=>p.name===g.pillar)?.bullets||[]).slice(0,4);   // older results: the pillar's own topics
   return`<section class="acc syn-pillar${open?' open':''}" id="acc-${id}"><div class="syn-prow">
-    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span><span class="syn-pname">${pillarEmoji(g.pillarId)} ${esc(g.pillar)}</span></button></div>
+    <button class="syn-phead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span><span class="syn-pname">${pillarEmoji(g.pillar)} ${esc(g.pillar)}</span></button></div>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-detail">
       ${g.note?`<div class="syn-label">Why it matters</div><p class="syn-note">${esc(g.note)}</p>`:''}
       ${sugg.length?`<div class="syn-label">What to address next</div><ul class="syn-arrows">${sugg.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}</div></div></section>`;
@@ -420,7 +442,7 @@ function renderSynthesisResult(syn){
   const covered=new Set([...(syn.commons||[]),...(syn.contested||[])].map(c=>c.pillarId??c.pillar)).size;
   const stat=(icon,color,num,label)=>`<div class="syn-stat"><div class="syn-slabel"><i class="ti ti-${icon}" style="color:${color}" aria-hidden="true"></i>${label}</div><div class="syn-num">${num}</div></div>`;
   return`<div class="syn">
-    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+'<span class="syn-of"> / 12</span>','Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
+    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+`<span class="syn-of"> / ${synPillarTotal(syn)}</span>`,'Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
     ${synSection('commons','The Commons','Where we agree',commons.length,commons.map(c=>synPillarRow('commons',c)).join(''),'No shared ground found yet.')}
     ${synSection('contested','Contested','Where we diverge',contested.length,contested.map(c=>synPillarRow('contested',c)).join(''),'No open disagreements found.')}
     ${synSection('gaps','Gaps','What’s missing',gaps.length,gaps.map(synGapRow).join(''),'Every pillar was addressed.')}
@@ -457,6 +479,7 @@ async function fetchSynStatus(key,includeTests){
 function synStatusLine(st){
   if(!st||!S.synVersions.length)return'';
   const p=st.pending,line=(kind,html)=>`<p class="syn-status ${kind}"><span class="syn-dot" aria-hidden="true"></span><span>${html}</span></p>`;
+  if(p.pillarsChanged)return line('pending',`<strong>The pillars have changed</strong> since the latest synthesis. The next synthesis will reread every contribution against the new pillars.`);
   if(p.contributions>0)return line('pending',`<strong>${plural(p.contributions,'new contribution')}</strong> from ${plural(p.voices,'voice')} ${p.contributions===1?'is':'are'} waiting for the next synthesis.`);
   if(p.removed>0)return line('pending',`<strong>${plural(p.removed,'contribution')}</strong> in the latest synthesis ${p.removed===1?'has':'have'} since been removed or marked as test. The next synthesis will leave ${p.removed===1?'it':'them'} out.`);
   return line('current','Current through all submitted contributions.');
