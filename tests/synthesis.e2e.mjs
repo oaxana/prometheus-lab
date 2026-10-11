@@ -175,7 +175,7 @@ check('legacy commons: bar from the strength label, pill counts people from the 
 check('legacy gaps (no pillarId, no suggestions) show just the note', (await p.locator('#acc-syn-gaps-OldG .syn-arrows').count()) === 0 && (await p.locator('#acc-syn-gaps-OldG .syn-note').innerText()) === 'old note');
 check('legacy string positions render as Position N and there is no spectrum', (await p.locator('#acc-syn-contested-Old .syn-pts li .syn-by').first().innerText()) === '— Position 1' && (await p.locator('#acc-syn-contested-Old .syn-pts li').first().innerText()).includes('A view') && (await p.locator('#acc-syn-contested-Old .spec-track').count()) === 0);
 
-// fact-check: the synthesis runs on Opus (medium), then Sonnet (high) checks each credited source against its own words
+// fact-check: the synthesis runs on Opus (medium), then Opus (medium) checks each credited source against its own words
 const logBefore = (await (await fetch(B + '/__log')).json()).length;
 await fetch(B + '/__synth?m=ok'); await fetch(B + '/__check?reject=' + encodeURIComponent('No deepfakes'));
 await postService('/supabase/rest/v1/submissions', { pillars: [3], content: 'fact-check material', summary: 's', auto_tagged: false, is_test: false, participant_id: stranger, uid: null, display_name: '' });
@@ -183,7 +183,7 @@ const fc = await runApi();
 const calls = (await (await fetch(B + '/__log')).json()).slice(logBefore).filter((x) => x.anthropic?.output_config).map((x) => x.anthropic);
 const synCall = calls.find((c) => c.output_config.format.schema.properties.commons), checkCalls = calls.filter((c) => c.output_config.format.schema.properties.results);
 check('synthesis call uses Opus 5.5 at medium effort', synCall?.model === 'claude-opus-5-5' && synCall.output_config.effort === 'medium');
-check('fact-check: one Sonnet 5.5 call per credited source, at high effort', checkCalls.length >= 2 && checkCalls.every((c) => c.model === 'claude-sonnet-5-5' && c.output_config.effort === 'high'));
+check('fact-check: one Opus 5.5 call per credited source, at medium effort', checkCalls.length >= 2 && checkCalls.every((c) => c.model === 'claude-opus-5-5' && c.output_config.effort === 'medium'));
 check('fact-check prompts hold one source\'s own words and the statements, never run-local labels', checkCalls.every((c) => { const t = c.messages[0].content; return t.includes('<contribution>') && t.includes('<statement id="1"') && !/Participant [A-Z]+ source|Source \d+ \(/.test(t); }));
 const deep = fc.commons?.[0]?.points?.find((x) => x.point.startsWith('No deepfakes'));
 const discl = fc.commons?.[0]?.points?.find((x) => x.point.includes('disclosure'));

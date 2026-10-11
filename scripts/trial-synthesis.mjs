@@ -29,10 +29,10 @@ client.messages.stream = (params, options) => {
   return s;
 };
 
-// Checkers to compare on the SAME synthesis output (the live app uses the first one).
+// Checkers to compare on the SAME synthesis output (the live app uses Opus medium).
 const CHECKERS = [
-  { name: 'Sonnet high', model: 'claude-sonnet-5-5', effort: 'high' },
   { name: 'Opus medium', model: 'claude-opus-5-5', effort: 'medium' },
+  { name: 'Sonnet high', model: 'claude-sonnet-5-5', effort: 'high' },
 ];
 const costOf = (list) => list.reduce((sum, u) => {
   const [inP, outP] = PRICES[u.model] ?? [0, 0];
