@@ -85,7 +85,7 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-function supabase() {
+export function supabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new HttpError(500, 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set on the server.');
@@ -300,7 +300,7 @@ Return one result for every statement id.`;
 
 // Everything eligible for a synthesis, grouped into run-local sources and distinct people.
 // Used both for the status check and for a real run, so both count voices the same way.
-async function gather(db, includeTests, withContent = true) {
+export async function gather(db, includeTests, withContent = true) {
   const { data: rows, error } = await db
     .from('submissions')
     .select(`id, pillars, pillar_choice, ${withContent ? 'content, summary, ' : ''}is_test, created_at, display_name, participant_id, uid, source_id`)
@@ -446,36 +446,22 @@ const versionResponse = (v) => ({
   includedTests: v.included_tests,
 });
 
-export default async function handler(req, res) {
-  if (req.method === 'GET') return status(req, res);
-  if (req.method !== 'POST') return send(res, 405, { error: 'Use GET or POST.' });
-  try {
-    requireAdmin(req);
-    const includeTests = readJson(req).includeTests === true;
+// Claude reads every eligible contribution (Opus), then the fact-check (Sonnet) removes unsupported credits.
+// Exported so scripts/trial-synthesis.mjs can try a run on real data without saving a version.
+// keepUnchecked: also return the result as it was before the fact-check (for comparing).
+export async function runSynthesis({ voices, sources, rowSources, personKeys, personIndex }, { keepUnchecked = false } = {}) {
+  const body = voices
+    .map((s, i) => {
+      const names = s.pillar_choice === 'something_else' && !(s.pillars ?? []).length
+        ? 'none (the author says this fits no draft pillar)'
+        : (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
+      const source = rowSources[i];
+      const participants = source.people.map((p) => labelFor(personIndex.get(p.key))).join(' | ');
+      return `<contribution n="${i + 1}" participant="${participants}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
+    })
+    .join('\n\n');
 
-    const db = supabase();
-    const { voices, sources, rowSources, personKeys, personIndex } = await gather(db, includeTests);
-    if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
-
-    // No new (or removed) eligible material since the latest version: return it, don't call Claude.
-    const latest = await latestVersion(db, true);
-    const pending = pendingOf({ voices, rowSources }, latest);
-    if (latest && !pending.changed) {
-      return send(res, 200, { ...versionResponse(latest), unchanged: true, pending });
-    }
-
-    const body = voices
-      .map((s, i) => {
-        const names = s.pillar_choice === 'something_else' && !(s.pillars ?? []).length
-          ? 'none (the author says this fits no draft pillar)'
-          : (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
-        const source = rowSources[i];
-        const participants = source.people.map((p) => labelFor(personIndex.get(p.key))).join(' | ');
-        return `<contribution n="${i + 1}" participant="${participants}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
-      })
-      .join('\n\n');
-
-    const prompt = `Analyze ${voices.length} contributions from ${personKeys.length} distinct participants for the Burning Man AI Constitution.
+  const prompt = `Analyze ${voices.length} contributions from ${personKeys.length} distinct participants for the Burning Man AI Constitution.
 
 RUN-LOCAL PARTICIPANTS: ${personKeys.map((_, i) => labelFor(i)).join(' | ')}
 SOURCE LABELS: ${sources.map((s) => s.label).join(' | ')}
@@ -499,18 +485,40 @@ Rules:
 - List an author in "voices" only when their own contribution states or clearly implies that point or stance.
 - Ignore small talk, greetings, meeting logistics, technical problems and personal-life details (health, visas or immigration, family, jobs, travel, money); they are not part of anyone's position and must never appear in your output. Quote only statements about AI, technology, community or the pillars.`;
 
-    const msg = await anthropic()
-      .messages.stream({
-        model: SYNTH_MODEL,
-        max_tokens: 32000, // adaptive thinking tokens count toward this
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
-        messages: [{ role: 'user', content: prompt }],
-      })
-      .finalMessage();
+  const msg = await anthropic()
+    .messages.stream({
+      model: SYNTH_MODEL,
+      max_tokens: 32000, // adaptive thinking tokens count toward this
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
+      messages: [{ role: 'user', content: prompt }],
+    })
+    .finalMessage();
 
-    const raw = parseJsonResponse(msg);
-    const checked = await factCheck(raw, voices, rowSources);
-    const result = clean(raw, sources);
+  const raw = parseJsonResponse(msg);
+  const unchecked = keepUnchecked ? clean(structuredClone(raw), sources) : undefined;
+  const checked = await factCheck(raw, voices, rowSources);
+  return { result: clean(raw, sources), checked, unchecked };
+}
+
+export default async function handler(req, res) {
+  if (req.method === 'GET') return status(req, res);
+  if (req.method !== 'POST') return send(res, 405, { error: 'Use GET or POST.' });
+  try {
+    requireAdmin(req);
+    const includeTests = readJson(req).includeTests === true;
+
+    const db = supabase();
+    const { voices, sources, rowSources, personKeys, personIndex } = await gather(db, includeTests);
+    if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
+
+    // No new (or removed) eligible material since the latest version: return it, don't call Claude.
+    const latest = await latestVersion(db, true);
+    const pending = pendingOf({ voices, rowSources }, latest);
+    if (latest && !pending.changed) {
+      return send(res, 200, { ...versionResponse(latest), unchanged: true, pending });
+    }
+
+    const { result, checked } = await runSynthesis({ voices, sources, rowSources, personKeys, personIndex });
 
     // A new immutable version. Its number comes from the latest version read above, so if
     // two runs overlap the second insert hits the primary key instead of overwriting.
