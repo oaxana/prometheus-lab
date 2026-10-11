@@ -306,7 +306,7 @@ Return one result for every statement id.`;
 export async function gather(db, includeTests, withContent = true) {
   const { data: rows, error } = await db
     .from('submissions')
-    .select(`id, pillars, pillar_choice, ${withContent ? 'content, summary, ' : ''}is_test, created_at, display_name, participant_id, uid, source_id`)
+    .select(`id, pillars, pillar_choice, ${withContent ? 'content, summary, ' : ''}is_test, created_at, content_edited_at, display_name, participant_id, uid, source_id`)
     .order('created_at', { ascending: true })
     .limit(1000);
   if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
@@ -393,13 +393,13 @@ export async function gather(db, includeTests, withContent = true) {
   return { voices, sources, rowSources, personKeys, personIndex };
 }
 
-const VERSION_COLUMNS = 'version, created_at, commons, contested, gaps, voice_count, contribution_count, source_count, included_tests, provenance';
+const VERSION_COLUMNS = 'version, created_at, gathered_at, commons, contested, gaps, voice_count, contribution_count, source_count, included_tests, provenance';
 
 // The newest saved version with its private provenance (or null when there is no history yet).
 async function latestVersion(db, full) {
   const { data, error } = await db
     .from('synthesis_versions')
-    .select(full ? `${VERSION_COLUMNS}, submission_ids, voice_keys` : 'version, commons, contested, gaps, submission_ids, voice_keys')
+    .select(full ? `${VERSION_COLUMNS}, submission_ids, voice_keys` : 'version, created_at, gathered_at, commons, contested, gaps, submission_ids, voice_keys')
     .order('version', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -425,13 +425,17 @@ function pendingOf({ voices, rowSources }, latest) {
   const people = new Set(fresh.flatMap((s) => s.people.map((p) => p.key)));
   const removed = [...included].filter((id) => !current.has(id)).length;
   const pillarsChanged = pillarsChangedSince(latest);
+  // Text edited after the latest version read the contributions (an edit is not a new contribution, but the next run reads different words).
+  const since = Date.parse(latest?.gathered_at ?? latest?.created_at ?? '') || 0;
+  const edited = voices.filter((r) => included.has(r.id) && r.content_edited_at && Date.parse(r.content_edited_at) > since).length;
   return {
     contributions: fresh.length,
+    edited, // included before, text changed since
     voices: people.size, // distinct voices behind the new contributions
     newVoices: [...people].filter((k) => !known.has(k)).length, // of those, voices not in the latest version at all
     removed, // included before, but since deleted or marked as test
     pillarsChanged, // the pillar list changed since the latest version
-    changed: fresh.length > 0 || removed > 0 || pillarsChanged,
+    changed: fresh.length > 0 || removed > 0 || edited > 0 || pillarsChanged,
   };
 }
 
@@ -514,6 +518,7 @@ export default async function handler(req, res) {
     const includeTests = readJson(req).includeTests === true;
 
     const db = supabase();
+    const gatheredAt = new Date().toISOString();   // taken BEFORE reading, so an edit made while the run is going still counts as newer
     const { voices, sources, rowSources, personKeys, personIndex } = await gather(db, includeTests);
     if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
 
@@ -531,6 +536,7 @@ export default async function handler(req, res) {
     const saved = {
       version: (latest?.version ?? 0) + 1,
       created_at: new Date().toISOString(),
+      gathered_at: gatheredAt,
       ...result,
       voice_count: personKeys.length,
       contribution_count: voices.length,

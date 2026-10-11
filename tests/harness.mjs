@@ -286,7 +286,7 @@ async function fakeSupabase(req, res, url, body) {
   if (p === '/rpc/update_my_submission') {
     const i = JSON.parse(body || '{}');
     const row = db.submissions.find((x) => x.id === i.p_id && user && x.participant_id === user.id);
-    if (row) { row.content = i.p_content; row.summary = i.p_summary || ''; row.contribution_type = (i.p_contribution_type || '').trim() || null; }
+    if (row) { if (row.content !== i.p_content) row.content_edited_at = new Date().toISOString(); row.content = i.p_content; row.summary = i.p_summary || ''; row.contribution_type = (i.p_contribution_type || '').trim() || null; }
     return json(res, 200, !!row);
   }
   if (p === '/rpc/set_my_submission_test') {
@@ -319,7 +319,7 @@ async function fakeSupabase(req, res, url, body) {
     res.writeHead(201); return res.end();
   }
   if (p === '/submissions' && req.method === 'GET') {
-    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id, discovery_input_id: s.discovery_input_id ?? null, source_id: s.source_id ?? null })));
+    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id, discovery_input_id: s.discovery_input_id ?? null, source_id: s.source_id ?? null, content_edited_at: s.content_edited_at ?? null })));
   }
   if (p === '/sources' && req.method === 'GET') return json(res, 200, db.sources.map((s) => ({ id: s.id, source_type: s.source_type })));
   if (p === '/submission_contributors' && req.method === 'GET') {
@@ -360,6 +360,13 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__mode') { anthropicMode = url.searchParams.get('m'); return json(res, 200, { anthropicMode }); }
     if (url.pathname === '/__log') return json(res, 200, log);
     if (url.pathname === '/__db') return json(res, 200, db);
+    if (url.pathname === '/__edit') {   // as update_my_submission: changing the text stamps content_edited_at, saving identical text does not
+      const row = db.submissions.find((x) => x.content === url.searchParams.get('from'));
+      if (!row) return json(res, 404, {});
+      const to = url.searchParams.get('to');
+      if (row.content !== to) row.content_edited_at = new Date().toISOString();
+      row.content = to; return json(res, 200, { ok: true });
+    }
     if (url.pathname === '/__wipeusers') { db.authUsers.clear(); return json(res, 200, {}); } // as a server restart does: saved logins become invalid
     if (url.pathname.startsWith('/anthropic/')) return fakeAnthropic(req, res, await readBody(req));
     if (url.pathname === '/__metrics') { metricsMode = url.searchParams.get('m'); return json(res, 200, { metricsMode }); }

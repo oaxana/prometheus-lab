@@ -78,6 +78,22 @@ await asUser(db, ALICE);
 check('owner can edit text, summary and label', (await upd(sid, 'edited', '   ')) === true);
 const edited = await listOf(sid);
 check('edit stored; blank label becomes null; pillars and audio untouched', edited.content === 'edited' && edited.summary === 'new summary' && edited.contribution_type === null && edited.pillars.join() === '1,3,7' && edited.audio_url === own);
+await asOwner(db);
+const stamp = async () => (await db.query('select content_edited_at e from submissions where id=$1', [sid])).rows[0].e;
+const afterEdit = await stamp();
+await asUser(db, ALICE);
+check('changing the text stamps content_edited_at', afterEdit !== null);
+await new Promise((r) => setTimeout(r, 20));
+await upd(sid, 'edited', 'Concern');   // same text, new label: not a text change
+await asOwner(db);
+check('saving identical text (only the label changed) leaves content_edited_at alone', String(await stamp()) === String(afterEdit));
+await asUser(db, ALICE);
+await upd(sid, 'edited again');
+await asOwner(db);
+check('a second real text change moves content_edited_at forward', new Date(await stamp()) > new Date(afterEdit));
+await asUser(db, ALICE);
+check('browser roles cannot read content_edited_at directly', await blocked(() => db.query('select content_edited_at from submissions')));
+await asUser(db, ALICE);
 check('browser roles still cannot update rows directly', await blocked(() => db.query(`update submissions set content='x'`)));
 
 // ---- test flag + delete carry the discovery input

@@ -45,7 +45,7 @@ function loginPage({ error = false, notConfigured = false } = {}) {
 body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;-webkit-font-smoothing:antialiased}
 .box{width:100%;max-width:360px;text-align:center}
 .flame{font-size:48px;display:block;margin-bottom:12px}
-h1{font-size:24px;font-weight:700;margin-bottom:8px}
+h1{font-size:24px;font-weight:700;margin-bottom:24px}
 .sub{color:var(--muted);font-size:15px;margin-bottom:24px}
 form{display:flex;flex-direction:column;gap:12px}
 input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:var(--font);font-size:15px;outline:0;text-align:center}
@@ -54,7 +54,7 @@ button{font-family:var(--font);font-size:15px;font-weight:600;padding:12px 28px;
 button:hover{filter:brightness(1.1)}
 .err{color:var(--bad);font-size:13px}.msg{color:var(--muted);font-size:14px;line-height:1.6}
 </style></head><body><div class="box">
-<span class="flame">🔥</span><h1>Prometheus Lab</h1><p class="sub">Crew only</p>
+<span class="flame">🔥</span><h1>Prometheus Lab</h1>
 ${body}
 </div></body></html>`;
 }

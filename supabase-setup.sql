@@ -166,6 +166,10 @@ begin
   end if;
 end $$;
 
+-- When the owner last CHANGED the text of this contribution (null = never edited). Lets the synthesis page notice that an
+-- already-synthesized contribution now reads differently. Private: browsers have no direct column access to submissions.
+alter table public.submissions add column if not exists content_edited_at timestamptz;
+
 create index if not exists submissions_created_at_idx  on public.submissions (created_at desc);
 create index if not exists submissions_uid_idx         on public.submissions (uid);
 create index if not exists submissions_participant_idx on public.submissions (participant_id);
@@ -725,7 +729,8 @@ begin
    where s.id = p_id and s.participant_id = auth.uid();
   if not found or (v_source is not null and v_type <> 'individual') then return false; end if;
   update public.submissions
-     set content = p_content,
+     set content_edited_at = case when content is distinct from p_content then now() else content_edited_at end,
+         content = p_content,
          summary = coalesce(p_summary, ''),
          contribution_type = nullif(trim(coalesce(p_contribution_type, '')), '')
    where id = p_id and participant_id = auth.uid();
@@ -970,6 +975,10 @@ create table if not exists public.synthesis_versions (
   submission_ids     uuid[]  not null default '{}'::uuid[],
   voice_keys         text[]  not null default '{}'::text[]
 );
+
+-- When the server read the contributions for this version (a few seconds to minutes BEFORE created_at). A later text edit
+-- is "new material" only if it happened after this moment. Null for older versions: created_at is used instead.
+alter table public.synthesis_versions add column if not exists gathered_at timestamptz;
 
 create or replace function public.synthesis_versions_immutable()
 returns trigger

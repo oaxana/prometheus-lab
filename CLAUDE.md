@@ -21,6 +21,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 
 **Name/anonymous (2026-10-11, uncommitted):** wizard step 1 for "My own thoughts" now uses two compact option buttons (`.wz-opt`: "With my name" default / "Anonymous", `data-fk` `anon-off` / `anon`) instead of a switch; name box only shows when named; `W.anonymous` defaults to false (transcripts/documents still force true). Known gap (told to the owner): edits to an already-synthesized entry do not count as new material (needs a SQL change, e.g. updated_at), deletes do.
 
+**Edits count as new material (2026-10-11, built + tested, NOT pushed; needs SQL first):** `supabase-setup.sql` adds `submissions.content_edited_at` (set by `update_my_submission` only when the text really changes) and `synthesis_versions.gathered_at` (taken before the run reads the rows). `pendingOf` in `api/synthesize.js` now returns `edited` (included rows whose `content_edited_at` is after the latest version's `gathered_at`, else `created_at`) and `changed` includes it; the Synthesis page shows "N contributions … have been edited since". **Owner must run the full `supabase-setup.sql` in the Supabase SQL Editor BEFORE this is pushed** (the new code selects the new columns). Also removed the "Crew only" line from the password page (`middleware.js`).
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).

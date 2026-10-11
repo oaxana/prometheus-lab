@@ -464,6 +464,7 @@ function synStatusLine(st){
   const p=st.pending,line=(kind,html)=>`<p class="syn-status ${kind}"><span class="syn-dot" aria-hidden="true"></span><span>${html}</span></p>`;
   if(p.pillarsChanged)return line('pending',`<strong>The pillars have changed</strong> since the latest synthesis. The next synthesis will reread every contribution against the new pillars.`);
   if(p.contributions>0)return line('pending',`<strong>${plural(p.contributions,'new contribution')}</strong> from ${plural(p.voices,'voice')} ${p.contributions===1?'is':'are'} waiting for the next synthesis.`);
+  if(p.edited>0)return line('pending',`<strong>${plural(p.edited,'contribution')}</strong> in the latest synthesis ${p.edited===1?'has':'have'} been edited since. The next synthesis will read the new text.`);
   if(p.removed>0)return line('pending',`<strong>${plural(p.removed,'contribution')}</strong> in the latest synthesis ${p.removed===1?'has':'have'} since been removed or marked as test. The next synthesis will leave ${p.removed===1?'it':'them'} out.`);
   return line('current','Current through all submitted contributions.');
 }

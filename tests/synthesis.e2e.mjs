@@ -195,6 +195,27 @@ const fc2 = await runApi();
 check('a failing fact-check never breaks the synthesis: version saved, credits kept', Number.isInteger(fc2.version) && fc2.factCheck?.failed > 0 && fc2.factCheck.removed === 0 && fc2.commons[0].points.find((x) => x.point.startsWith('No deepfakes')).voices.length > 0, JSON.stringify(fc2.factCheck));
 await fetch(B + '/__check');
 
+// editing an already-synthesized contribution is new material (it is not a new contribution)
+await runApi();   // bring the latest version up to date with everything before this block
+const e0 = (await statusApi()).pending;
+check('before any edit: nothing edited, nothing pending', e0.edited === 0 && e0.changed === false, JSON.stringify(e0));
+await fetch(B + '/__edit?from=' + encodeURIComponent('newcomer thought') + '&to=' + encodeURIComponent('newcomer thought'));
+check('saving identical text does not count as an edit', (await statusApi()).pending.edited === 0);
+await new Promise((r) => setTimeout(r, 30));
+await fetch(B + '/__edit?from=' + encodeURIComponent('newcomer thought') + '&to=' + encodeURIComponent('newcomer thought, now with a revised view'));
+const e1 = await statusApi();
+check('an edit counts as changed material, with no new contribution or voice', e1.pending.edited === 1 && e1.pending.contributions === 0 && e1.pending.voices === 0 && e1.pending.removed === 0 && e1.pending.changed === true, JSON.stringify(e1.pending));
+await p.evaluate(() => { S.synStatusKey = ''; render(); }); await p.waitForSelector('.syn-status.pending');
+check('the Synthesis page says it was edited', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '1 contribution in the latest synthesis has been edited since. The next synthesis will read the new text.');
+const nBefore = (await versions()).length, callsE = await llmCalls();
+const runE = await runApi();
+check('running again makes a NEW version from the edited text', runE.unchanged === false && (await versions()).length === nBefore + 1 && (await llmCalls()) === callsE + 1);
+const promptE = (await (await fetch(B + "/__log")).json()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
+check('the new version read the edited words, not the old ones', promptE.includes('now with a revised view'));
+const gv = (await versions()).at(-1);
+check('the version remembers when it read the contributions (before it was saved)', !!gv.gathered_at && Date.parse(gv.gathered_at) <= Date.parse(gv.created_at));
+check('afterwards the edit is no longer pending', (await statusApi()).pending.edited === 0 && (await statusApi()).pending.changed === false);
+
 // a version made with the original 12 pillars keeps its own names, emojis and "/ 12"
 await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 98, timestamp: Date.now(), count: 2, submissionCount: 2 }, ...S.synVersions]; S.synView = null;
   S.synBodies[98] = { commons: [{ pillarId: 10, pillar: 'AI Presence, Identity & Immediacy', consensus: 70, points: [{ point: 'p', voices: ['A'] }], participants: ['A'] }], contested: [], gaps: [{ pillarId: 11, pillar: 'The Default World Bridge', note: 'n', suggestions: ['s'] }] }; render(); });
