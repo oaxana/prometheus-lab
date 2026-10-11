@@ -21,7 +21,7 @@ const wzTime=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 
 function newRec(){return{blob:null,url:'',mime:'',seconds:0,transcript:'',recording:false,stt:'',path:''};}
 function newWizard(){return{
-  step:1,confirmed:false,runId:crypto.randomUUID(),anonymous:true,isTest:false,fromReview:false,focusTitle:false,
+  step:1,confirmed:false,runId:crypto.randomUUID(),anonymous:false,isTest:false,fromReview:false,focusTitle:false,
   sourceType:'individual',sourceTitle:'',sourceAuthors:'',
   dMode:null,dText:'',dRec:newRec(),dId:null,dChain:Promise.resolve(),
   mapState:'idle',mapFor:'',mapping:null,mapToken:0,pillars:new Set(),choice:'selected',
@@ -100,9 +100,10 @@ function wzStep1(){
   const named=!W.anonymous;
   const nameBit=!named?'':S.participantName
     ?`<div class="wz-name">Your name will show as <strong>${esc(S.participantName)}</strong>. <button type="button" class="raw-toggle" onclick="editDisplayName()">Change</button></div>`
-    :`<div class="wz-name"><label for="display-name">Choose one name or handle to show on your contributions</label><input type="text" id="display-name" maxlength="80" placeholder="Your name or handle" value="${esc(S.displayName)}" oninput="wzNameInput()"></div>`;
+    :`<div class="wz-name"><label for="display-name">Your name or handle</label><input type="text" id="display-name" maxlength="80" placeholder="Your name or handle" value="${esc(S.displayName)}" oninput="wzNameInput()"></div>`;
   const sourceCards=`<h3 class="wz-label" id="wz-source-q">What are you contributing?</h3><div class="wz-cards three wz-source-types" role="group" aria-labelledby="wz-source-q">${wzModeCard(W.sourceType==='individual','user','My own thoughts','','wzSetSourceType(\'individual\')','source-individual')}${wzModeCard(W.sourceType==='transcript','messages','A conversation or transcript','','wzSetSourceType(\'transcript\')','source-transcript')}${wzModeCard(W.sourceType==='document','file-text','A document or paper','','wzSetSourceType(\'document\')','source-document')}</div>`;
-  const identitySettings=W.sourceType==='individual'?`<div class="card wz-settings">${wzSwitch(W.anonymous,'Submit anonymously','Other participants will see your summary but not your name.','anon','wzToggle(\'anonymous\')')}
+  const opt=(on,icon,title,sub,fk,val)=>`<button type="button" class="wz-opt ${on?'selected':''}" aria-pressed="${on}" data-fk="${fk}" onclick="wzSetAnon(${val})"><i class="ti ti-${icon}" aria-hidden="true"></i><span class="wz-opt-text"><span class="wz-opt-title">${title}</span><span class="wz-opt-sub">${sub}</span></span></button>`;
+  const identitySettings=W.sourceType==='individual'?`<div class="card wz-settings"><div class="wz-choice" role="group" aria-label="How should your contribution appear?">${opt(!W.anonymous,'user','With my name','Shown with your summary','anon-off','false')}${opt(W.anonymous,'eye-off','Anonymous','Your name stays hidden','anon','true')}</div>
       ${nameBit}
       ${S.isAdmin?wzSwitch(W.isTest,'Test submission','Test submissions won’t be included in the final synthesis','test','wzToggle(\'isTest\')'):''}</div>`
     :`${S.isAdmin?`<div class="card wz-settings">${wzSwitch(W.isTest,'Test source','This source won’t be included in synthesis','test','wzToggle(\'isTest\')')}</div>`:''}<p class="wz-help">The uploader is recorded privately for stewardship. They are not treated as a speaker or author.</p>`;
@@ -115,9 +116,10 @@ function wzStep1(){
 function wzLiveGate(){wzSyncFields();const b=document.querySelector('.wz-nav .btn-amber');if(b&&W.step!==6)b.disabled=!wzValid(W.step);}
 // Only the admin can make a test submission (the switch is hidden for everyone else).
 function wzIsTest(w){return !!(S.isAdmin&&w.isTest);}
+function wzSetAnon(v){wzSyncFields();W.anonymous=v;render();}
 function wzToggle(k){wzSyncFields();W[k]=!W[k];render();}
 function wzNameInput(){const e=document.getElementById('display-name');S.displayName=e.value;const b=document.getElementById('wz-start');if(b)b.disabled=!wzValid(1);}
-function wzSetSourceType(type){wzSyncFields();W.sourceType=type;if(type!=='individual')W.anonymous=true;render();}
+function wzSetSourceType(type){wzSyncFields();const was=W.sourceType;W.sourceType=type;if(type!=='individual')W.anonymous=true;else if(was!=='individual')W.anonymous=false;render();}   // an uploader is never shown as a speaker; individual entries default to showing the name
 
 function wzModeCard(on,icon,title,sub,fn,fk){
   return `<button type="button" class="wz-card ${on?'selected':''}" aria-pressed="${on}" data-fk="${fk}" onclick="${fn}"><i class="ti ti-${icon}" aria-hidden="true"></i><span class="wz-card-title">${title}</span>${sub?`<span class="wz-card-sub">${sub}</span>`:''}</button>`;}

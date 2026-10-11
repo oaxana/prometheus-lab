@@ -30,14 +30,14 @@ check('step 1 asks "What are you contributing?" with three source types, "My own
 check('stepper has 7 steps, first is active', (await p.locator('.wz-stepper li').count()) === 7 && (await p.locator('.wz-stepper li.active').count()) === 1 && (await step(p)) === 1);
 check('no Back button on step 1', (await p.locator('.wz-nav .btn-ghost:has-text("Back")').count()) === 0);
 check('test helper text is shown', (await p.locator('.wz-help:has-text("Test submissions won’t be included in the final synthesis")').count()) === 1);
-check('both toggles are switches (keyboard/screen-reader friendly)', (await p.locator('[role=switch]').count()) === 2 && (await p.locator('[data-fk=anon]').getAttribute('aria-checked')) === 'true');
+check('name/anonymous are two pressable options (default "With my name"), the test toggle is a switch', (await p.locator('[role=switch]').count()) === 1 && (await p.locator('.wz-choice [aria-pressed=true]').count()) === 1 && (await p.locator('[data-fk=anon-off]').getAttribute('aria-pressed')) === 'true');
 await p.click('[data-fk=test]');
-check('active toggles use amber #EF9F27, not grey', (await color(p, '[data-fk=anon] .wz-track', 'backgroundColor')) === 'rgb(239, 159, 39)' && (await color(p, '[data-fk=test] .wz-track', 'backgroundColor')) === 'rgb(239, 159, 39)');
+check('chosen option and active toggle use amber #EF9F27, not grey', (await color(p, '[data-fk=anon-off]', 'borderTopColor')) === 'rgb(239, 159, 39)' && (await color(p, '[data-fk=test] .wz-track', 'backgroundColor')) === 'rgb(239, 159, 39)');
 await p.click('[data-fk=test]');
 await p.screenshot({ path: 'screens/shot-wizard-1.png', fullPage: true });
 
 // ---------------- Step 2
-await p.click('#wz-start'); await p.waitForSelector('.wz-title:has-text("What topics matter most to you?")');
+await p.click('[data-fk=anon]'); await p.click('#wz-start'); await p.waitForSelector('.wz-title:has-text("What topics matter most to you?")');
 check('stepper: step 1 done (blue), step 2 active (amber)', (await color(p, '.wz-stepper li.done', 'backgroundColor')) !== (await color(p, '.wz-stepper li:last-child', 'backgroundColor')) && (await color(p, '.wz-stepper li.active', 'backgroundColor')) === 'rgb(239, 159, 39)');
 check('step 2 asks the blank-slate question', (await p.locator('.subtitle').first().innerText()).includes('what are the most important topics to address as humans and AI begin to coexist?'));
 check('step 2 is gated before any input', !(await nextOn(p)));
@@ -181,11 +181,11 @@ const playBtn = await p.locator('.wz-hrow button:has-text("Play recording")').co
 check('stored recording can be reopened from history', playBtn === 1);
 // submit another -> clean slate
 await p.click('button:has-text("+ Submit another")'); await p.waitForSelector('#wz-start');
-check('"+ Submit another" returns to a fresh step 1', (await step(p)) === 1 && (await p.locator('[data-fk=anon]').getAttribute('aria-checked')) === 'true' && (await p.locator('[data-fk=test]').getAttribute('aria-checked')) === 'false');
+check('"+ Submit another" returns to a fresh step 1', (await step(p)) === 1 && (await p.locator('[data-fk=anon-off]').getAttribute('aria-pressed')) === 'true' && (await p.locator('[data-fk=test]').getAttribute('aria-checked')) === 'false');
 check('past submissions still reachable from step 1', (await p.locator('button:has-text("Your past submissions (1)")').count()) === 1);
 
 // ---------------- Second run: voice discovery, "Something else entirely", test + anonymous badges
-await p.click('[data-fk=test]'); await p.click('#wz-start');
+await p.click('[data-fk=anon]'); await p.click('[data-fk=test]'); await p.click('#wz-start');
 await p.click('[data-fk=dm-voice]'); await p.click('.wz-rec-btn'); await p.waitForTimeout(1300);
 check('step 2 voice: Next stays blocked while the recording is still running', !(await nextOn(p)));
 await p.click('.wz-rec-btn'); await p.waitForSelector('audio.wz-audio');
@@ -282,6 +282,8 @@ check('user text is sent inside <input> tags, with a do-not-follow system prompt
   await pg.fill('#auth-email', 'skip@example.com'); await pg.click('button:has-text("Send code")'); await pg.waitForSelector('#auth-code');
   check('after sending, a friendly "check your spam" note is visible next to the code box', await pg.locator('.spam-nudge').isVisible() && (await pg.locator('.spam-nudge').innerText()).toLowerCase().includes('spam'));
   await pg.fill('#auth-code', '123456'); await pg.click('button:has-text("Verify")'); await pg.waitForSelector('#wz-start');
+  check('a new participant must enter a name before starting (anonymous is not the default)', await pg.locator('#wz-start').isDisabled());
+  await pg.fill('#display-name', 'Skipper');
   await pg.click('#wz-start'); await pg.waitForSelector('.wz-skip');
   const mapBefore = (await log()).filter((x) => x.anthropic).length, discBefore = (await db()).discovery.length;
   await pg.click('.wz-skip'); await pg.waitForSelector('.wz-pillars');

@@ -38,10 +38,8 @@ export async function runWizard(p, o = {}) {
   if (!resume) {   // resume: the caller already set up step 1 by hand
     await p.click('nav button:has-text("Submit")');
     await at(1);
-    if (!anonymous) {
-      await p.click('[data-fk=anon]');
-      if (name && (await p.locator('#display-name').count())) await p.fill('#display-name', name);
-    }
+    if (anonymous) await p.click('[data-fk=anon]');
+    else if (await p.locator('#display-name').count()) await p.fill('#display-name', name || 'Test Person');
     if (test) await p.click('[data-fk=test]');
   }
   if (stopAt === 1) return;

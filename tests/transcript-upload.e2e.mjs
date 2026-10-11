@@ -58,7 +58,7 @@ await p.click('.toggle-row:has-text("Mine only")'); await p.click('nav button:ha
 // A saved login the server no longer accepts: ask to verify again instead of a dead-end error, keep the entry
 const dialogs = []; p.removeAllListeners('dialog'); p.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
 await p.waitForSelector('#wz-start');   // coming back to Submit after a saved entry starts a fresh one
-await p.click('#wz-start'); await p.click('[data-fk=dm-text]'); await p.fill('#discovery-text', 'Consent matters.'); await p.click(NEXT);
+await p.click('[data-fk=anon]'); await p.click('#wz-start'); await p.click('[data-fk=dm-text]'); await p.fill('#discovery-text', 'Consent matters.'); await p.click(NEXT);
 await p.waitForSelector('.wz-pillars'); await p.click(NEXT); await p.click('[data-fk=m-text]'); await p.click(NEXT);
 await p.fill('#voice-text', 'Keep the stale-login text.'); await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("Review and submit")');
 await fetch(B + '/__wipeusers');

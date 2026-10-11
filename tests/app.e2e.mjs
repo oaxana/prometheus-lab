@@ -67,14 +67,15 @@ await page.reload();await page.click('nav button:has-text("Submit")');await page
 check('returning authenticated session remains usable', await page.locator('.auth-status:has-text("Verified participant")').isVisible());
 // Wizard step 1: the name box and the toggles survive re-renders; both toggles use the same amber
 await page.waitForSelector('#wz-start');
-const amber = async (k) => page.locator(`[data-fk=${k}] .wz-track`).evaluate((e) => getComputedStyle(e).backgroundColor);
-check('anonymous toggle is amber when on', (await amber('anon')) === 'rgb(239, 159, 39)', await amber('anon'));
+check('step 1 defaults to "With my name" (anonymous is off)', (await page.locator('[data-fk=anon-off]').getAttribute('aria-pressed')) === 'true' && (await page.locator('[data-fk=anon]').getAttribute('aria-pressed')) === 'false');
+await page.click('[data-fk=anon]');
+check('choosing Anonymous hides the name box and selects it in amber', (await page.locator('#display-name').count()) === 0 && (await page.locator('[data-fk=anon]').evaluate((e) => getComputedStyle(e).borderTopColor)) === 'rgb(239, 159, 39)');
+await page.click('[data-fk=anon-off]');
 check('regular participant: no test switch or test wording on step 1', (await page.locator('[data-fk=test]').count()) === 0 && !/\btest/i.test(await page.locator('main').innerText()));
-await page.click('[data-fk=anon]');   // named submission
 check('"Get started" is blocked until a name is chosen', await page.locator('#wz-start').isDisabled());
 await page.fill('#display-name', 'Ember "<b>x</b>"');
 check('typing a name enables "Get started"', await page.locator('#wz-start').isEnabled());
-await page.click('[data-fk=anon]'); await page.click('[data-fk=anon]');   // re-render twice
+await page.click('[data-fk=anon]'); await page.click('[data-fk=anon-off]');   // re-render twice
 check('display name survives + quotes escaped', (await page.inputValue('#display-name')) === 'Ember "<b>x</b>"');
 await page.screenshot({ path: SHOTS + 'screens/shot-submit.png', fullPage: true });
 await runWizard(page, { text: 'AI should always disclose itself on playa.', choice: 'not_sure', resume: true });   // step 1 was set up by hand above
