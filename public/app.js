@@ -165,7 +165,7 @@ function render(){
     {id:'submit',label:'Submit',icon:'✍️'},{id:'voices',label:'Voices',icon:'👁'},
     {id:'synthesis',label:'Synthesis',icon:'⚡'}
   ].map(t=>{const lk=isLocked(t.id);
-    return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-label="${t.label} (unlocks after your first submission)"`:''} onclick="nav('${t.id}')">${t.icon} ${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</button>`;}).join('');
+    return`<button class="${S.view===t.id?'active':''}${lk?' locked':''}"${lk?` aria-label="${t.label} (unlocks after your first submission)"`:''} onclick="nav('${t.id}')"><span class="nav-ico" aria-hidden="true">${t.icon}</span> <span class="nav-lbl">${t.label}${lk?' <i class="ti ti-lock" aria-hidden="true"></i>':''}</span></button>`;}).join('');
   const m=document.getElementById('main');
   if(isLocked(S.view))renderLocked(m,S.view);
   else({home:renderHome,submit:renderSubmit,pillars:renderPillars,voices:renderVoices,synthesis:renderSynthesis,admin:renderAdmin})[S.view]?.(m);

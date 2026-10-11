@@ -53,7 +53,7 @@ function wzNewSubmission(){wzReset();W.focusTitle=true;render();window.scrollTo(
 function wzShowHistory(){wzGo(7);}
 async function wzNext(){
   wzSyncFields();const s=W.step;
-  if(!wzValid(s))return;
+  if(!wzValid(s)){if(s===1)wzNeedName();return;}
   if(s===1&&W.sourceType!=='individual'){   // transcripts and documents skip the "what matters to you" step
     W.mapState='done';W.mapFor='';W.mapping={matched:[],newIdeas:[],reasoning:''};wzGo(3);return;
   }
@@ -111,14 +111,31 @@ function wzStep1(){
   return `<p class="wz-eyebrow">Before you begin</p>${wzTitle('Share your thinking on how humans and AI should coexist.')}
     ${sourceCards}${identitySettings}
     <div class="wz-nav"><span>${mine?`<button type="button" class="raw-toggle" onclick="wzShowHistory()">Your past submissions (${mine})</button>`:''}</span>
-    <button type="button" class="btn btn-amber" id="wz-start" onclick="wzNext()" ${wzValid(1)?'':'disabled'}>Get started →</button></div>`;}
+    <button type="button" class="btn btn-amber" id="wz-start" onclick="wzNext()">Get started →</button></div>`;}
 // Typing doesn't redraw the page, so re-check the current step's gate and enable/disable Next ourselves.
-function wzLiveGate(){wzSyncFields();const b=document.querySelector('.wz-nav .btn-amber');if(b&&W.step!==6)b.disabled=!wzValid(W.step);}
+function wzLiveGate(){wzSyncFields();const b=document.querySelector('.wz-nav .btn-amber');if(b&&W.step!==6&&W.step!==1)b.disabled=!wzValid(W.step);}
 // Only the admin can make a test submission (the switch is hidden for everyone else).
 function wzIsTest(w){return !!(S.isAdmin&&w.isTest);}
 function wzSetAnon(v){wzSyncFields();W.anonymous=v;render();}
 function wzToggle(k){wzSyncFields();W[k]=!W[k];render();}
-function wzNameInput(){const e=document.getElementById('display-name');S.displayName=e.value;const b=document.getElementById('wz-start');if(b)b.disabled=!wzValid(1);}
+function wzNameInput(){const e=document.getElementById('display-name');S.displayName=e.value;}
+// Step 1 never moves on without a name or "Anonymous". The button stays tappable so a person always gets told why.
+function wzNeedName(){
+  if(document.querySelector('.wz-popup-backdrop'))return;
+  const back=document.createElement('div');back.className='wz-popup-backdrop';
+  back.innerHTML=`<div class="wz-popup" role="dialog" aria-modal="true" aria-labelledby="wz-popup-t"><span class="wz-popup-icon" aria-hidden="true">👤</span><h3 id="wz-popup-t">Add your name first</h3>
+    <p>Type the name to show with your contribution, or choose Anonymous to keep it hidden.</p>
+    <div class="wz-popup-actions"><button type="button" class="btn btn-amber" id="wz-popup-name">Enter my name</button><button type="button" class="btn-ghost" id="wz-popup-anon">Go anonymous instead</button></div></div>`;
+  const close=()=>{back.remove();document.removeEventListener('keydown',esc);};
+  const esc=e=>{if(e.key==='Escape'){close();wzFocusName();}};
+  document.addEventListener('keydown',esc);
+  back.addEventListener('click',e=>{if(e.target===back){close();wzFocusName();}});
+  document.body.appendChild(back);
+  back.querySelector('#wz-popup-name').onclick=()=>{close();wzFocusName();};
+  back.querySelector('#wz-popup-anon').onclick=()=>{close();wzSetAnon(true);};
+  back.querySelector('#wz-popup-name').focus();
+}
+function wzFocusName(){const e=document.getElementById('display-name');if(e){e.focus();e.scrollIntoView({block:'center',behavior:'smooth'});}}
 function wzSetSourceType(type){wzSyncFields();const was=W.sourceType;W.sourceType=type;if(type!=='individual')W.anonymous=true;else if(was!=='individual')W.anonymous=false;render();}   // an uploader is never shown as a speaker; individual entries default to showing the name
 
 function wzModeCard(on,icon,title,sub,fn,fk){
@@ -455,6 +472,7 @@ async function wzAnalyze(content,attachments=[]){
 async function wzSubmit(){
   if(W.submitting||!wzValid(7))return;
   if(!S.session)return alert('Verify your email before contributing.');
+  if(!wzValid(1)){wzGo(1);wzNeedName();return;}   // never lose the entry to a missing name at the very end
   const {rawContent,analysisContent,attachments}=wzBuild();
   if(!rawContent||!analysisContent)return alert('Please add your contribution first.');
   if(rawContent.length>MAX_CONTENT_CHARS||analysisContent.length>MAX_CONTENT_CHARS)return alert('That is too long. The limit is '+MAX_CONTENT_CHARS.toLocaleString()+' characters. Try trimming it.');
@@ -515,7 +533,7 @@ function wzHistoryRow(s){
     s.fileUrl?`<button type="button" class="raw-toggle" onclick="wzOpenStored('${esc(s.id)}','file')">${/^https:/.test(s.fileUrl)?'Open link':'Open file'}</button>`:''].filter(Boolean).join(' · ');
   return `<div class="wz-hrow" data-id="${esc(s.id)}">${meta}<div class="submission-pills">${pills}</div>
     <p class="wz-hsum">${esc(wzClip(s.summary||'Summary pending…',180))}</p>
-    <div class="wz-hactions">${s.content!=null?`<button type="button" class="btn-ghost" onclick="wzEditStart('${esc(s.id)}')">Edit</button>`:''}${media}</div></div>`;}
+    <div class="wz-hactions">${s.content!=null?`<button type="button" class="btn-ghost" onclick="wzEditStart('${esc(s.id)}')">Edit</button>`:''}${!s.sourceType||s.sourceType==='individual'?`<button type="button" class="btn-ghost danger" onclick="deleteMine('${esc(s.id)}')">Delete</button>`:''}${media}</div></div>`;}
 function wzEditStart(id){wzSyncFields();const s=S.submissions.find(x=>x.id===id);if(!s)return;W.editId=id;W.editText=s.content||'';W.editType=s.contributionType||'';render();}
 function wzEditCancel(){W.editId=null;render();}
 async function wzEditSave(){

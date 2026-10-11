@@ -205,6 +205,13 @@ const syn = await fetch(B + '/api/synthesize', { method: 'POST', headers: { cook
 const synPrompt = (await log()).filter((x) => x.anthropic?.output_config?.format?.schema?.properties?.commons).pop().anthropic.messages[0].content;
 check('synthesis prompt marks the row as fitting no draft pillar', syn.status === 200 && synPrompt.includes('none (the author says this fits no draft pillar)'));
 
+// delete from "Your submissions" (it used to exist only on the Voices tab)
+const nBeforeDel = (await db()).submissions.length;
+check('every individual history row has a Delete button next to Edit', (await p.locator('.wz-hrow button:has-text("Delete")').count()) === 2);
+await p.locator('.wz-hrow').first().locator('button:has-text("Delete")').click();
+await p.waitForFunction(() => document.querySelectorAll('.wz-hrow').length === 1);
+check('deleting from the history removes the row and the saved submission', (await db()).submissions.length === nBeforeDel - 1);
+
 // ---------------- Mapping failure falls back to the plain grid
 await fetch(B + '/__map?m=fail');
 await runWizard(p, { stopAt: 3, discovery: 'Something about fire safety.' }).catch(() => {});
@@ -282,8 +289,11 @@ check('user text is sent inside <input> tags, with a do-not-follow system prompt
   await pg.fill('#auth-email', 'skip@example.com'); await pg.click('button:has-text("Send code")'); await pg.waitForSelector('#auth-code');
   check('after sending, a friendly "check your spam" note is visible next to the code box', await pg.locator('.spam-nudge').isVisible() && (await pg.locator('.spam-nudge').innerText()).toLowerCase().includes('spam'));
   await pg.fill('#auth-code', '123456'); await pg.click('button:has-text("Verify")'); await pg.waitForSelector('#wz-start');
-  check('a new participant must enter a name before starting (anonymous is not the default)', await pg.locator('#wz-start').isDisabled());
-  await pg.fill('#display-name', 'Skipper');
+  await pg.click('#wz-start');
+  check('a new participant cannot start without a name: a pop-up asks (anonymous is not the default)', await pg.locator('.wz-popup').isVisible() && (await step(pg)) === 1);
+  await pg.click('#wz-popup-anon');
+  check('"Go anonymous instead" in the pop-up selects Anonymous and hides the name box', (await pg.locator('[data-fk=anon]').getAttribute('aria-pressed')) === 'true' && (await pg.locator('#display-name').count()) === 0);
+  await pg.click('[data-fk=anon-off]'); await pg.fill('#display-name', 'Skipper');
   await pg.click('#wz-start'); await pg.waitForSelector('.wz-skip');
   const mapBefore = (await log()).filter((x) => x.anthropic).length, discBefore = (await db()).discovery.length;
   await pg.click('.wz-skip'); await pg.waitForSelector('.wz-pillars');

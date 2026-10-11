@@ -363,3 +363,18 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .spam-icon{font-size:26px;line-height:1;display:inline-block;transform-origin:50% 80%;animation:spam-wiggle 1.2s ease-in-out 12s 2}
 @keyframes spam-wiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg) scale(1.15)}40%{transform:rotate(12deg) scale(1.15)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
 @media(prefers-reduced-motion:reduce){.spam-icon{animation:none}}
+
+/* phones: all five tabs fit across the screen (icon over label) instead of the last one being cut off */
+@media(max-width:520px){
+  nav{padding:6px 4px;gap:2px}
+  nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex:1 1 0;min-width:0;padding:6px 1px;font-size:11.5px;line-height:1.25}
+  nav button .nav-ico{font-size:18px;line-height:1.1}
+  nav button .ti-lock{font-size:10px;vertical-align:0}
+}
+/* pop-up asking for a name (or anonymous) before the wizard moves on */
+.wz-popup-backdrop{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(8,6,14,.62)}
+.wz-popup{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 20px 18px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.wz-popup .wz-popup-icon{font-size:30px;display:block;margin-bottom:6px}
+.wz-popup h3{font-size:17px;margin:0 0 6px}.wz-popup p{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.5}
+.wz-popup-actions{display:flex;flex-direction:column;gap:8px}.wz-popup-actions .btn{width:100%}
+.btn-ghost.danger{color:var(--contested)}

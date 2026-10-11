@@ -72,7 +72,10 @@ await page.click('[data-fk=anon]');
 check('choosing Anonymous hides the name box and selects it in amber', (await page.locator('#display-name').count()) === 0 && (await page.locator('[data-fk=anon]').evaluate((e) => getComputedStyle(e).borderTopColor)) === 'rgb(239, 159, 39)');
 await page.click('[data-fk=anon-off]');
 check('regular participant: no test switch or test wording on step 1', (await page.locator('[data-fk=test]').count()) === 0 && !/\btest/i.test(await page.locator('main').innerText()));
-check('"Get started" is blocked until a name is chosen', await page.locator('#wz-start').isDisabled());
+await page.click('#wz-start');
+check('"Get started" without a name shows a pop-up and stays on step 1', await page.locator('.wz-popup').isVisible() && (await page.locator('.wz-stepcount').innerText()).includes('Step 1 of'));
+await page.click('#wz-popup-name');
+check('"Enter my name" closes the pop-up and focuses the name box', (await page.locator('.wz-popup').count()) === 0 && (await page.evaluate(() => document.activeElement?.id)) === 'display-name');
 await page.fill('#display-name', 'Ember "<b>x</b>"');
 check('typing a name enables "Get started"', await page.locator('#wz-start').isEnabled());
 await page.click('[data-fk=anon]'); await page.click('[data-fk=anon-off]');   // re-render twice
@@ -184,6 +187,12 @@ const m = await (await fetch(B + '/api/metrics')).json();
 check('metrics API leaves out test rows and exposes only three counts', JSON.stringify(Object.keys(m).sort()) === '["contributions","pillarsCovered","voices"]' && m.contributions === 1 && m.voices === 1);
 check('metrics API is GET-only', (await fetch(B + '/api/metrics', { method: 'POST' })).status === 405);
 
+// Phone: all five tabs fit across the screen (the last one used to be cut off on the right)
+const pctx = await browser.newContext({ viewport: { width: 375, height: 740 }, isMobile: true, hasTouch: true }); const pp = await pctx.newPage();
+await pp.goto(B); await pp.waitForSelector('.hero-cta');
+const navFit = await pp.evaluate(() => ({ right: Math.max(...[...document.querySelectorAll('nav button')].map((b) => b.getBoundingClientRect().right)), w: innerWidth, sw: document.documentElement.scrollWidth, nav: [document.getElementById('nav').scrollWidth, document.getElementById('nav').clientWidth] }));
+check('phone: all 5 tabs fit the 375px screen and the page does not scroll sideways', navFit.right <= navFit.w && navFit.sw <= navFit.w && navFit.nav[0] <= navFit.nav[1], JSON.stringify(navFit));
+await pctx.close();
 // Home fits a laptop screen: everything down to and including the "What's a constitution here?" card is visible without scrolling
 const fctx = await browser.newContext({ viewport: { width: 1280, height: 650 } }); const fp = await fctx.newPage();
 await fp.goto(B); await fp.waitForSelector('.hero-cta');

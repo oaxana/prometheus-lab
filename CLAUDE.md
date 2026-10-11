@@ -23,6 +23,8 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 
 **Edits count as new material (2026-10-11, built + tested, NOT pushed; needs SQL first):** `supabase-setup.sql` adds `submissions.content_edited_at` (set by `update_my_submission` only when the text really changes) and `synthesis_versions.gathered_at` (taken before the run reads the rows). `pendingOf` in `api/synthesize.js` now returns `edited` (included rows whose `content_edited_at` is after the latest version's `gathered_at`, else `created_at`) and `changed` includes it; the Synthesis page shows "N contributions … have been edited since". **Owner must run the full `supabase-setup.sql` in the Supabase SQL Editor BEFORE this is pushed** (the new code selects the new columns). Also removed the "Crew only" line from the password page (`middleware.js`).
 
+**Mobile + name guard + delete (2026-10-11, uncommitted):** phone tab bar now fits all 5 tabs (icon over label under 520px; before, "Synthesis" was cut off); step 1 "Get started" is always tappable and `wzNeedName()` shows a pop-up (Enter my name / Go anonymous instead) when the name is missing, and `wzSubmit` sends people back to step 1 with the same pop-up instead of a raw error; the "Your submissions" history now has a Delete button (calls `deleteMine`) next to Edit.
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).
