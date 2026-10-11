@@ -4,12 +4,15 @@ const MAX_CONTENT_CHARS=100000;           // matches the CHECK constraint in sup
 const MAX_ATTACH_BYTES=3*1024*1024;       // matches api/summarize.js (Vercel request limit is 4.5 MB)
 const POLL_MS=20000;
 
-let S={view:'home',submissions:[],synthesis:null,isAdmin:false,adminChecked:false,adminBusy:false,adminError:'',unlockTabs:false,
+let S={view:'home',submissions:[],isAdmin:false,adminChecked:false,adminBusy:false,adminError:'',unlockTabs:false,
   synthesizing:false,displayName:'',
   showTests:false,showMine:false,synthIncludeTests:false,openPillars:new Set(),openRaw:new Set(),
   loaded:false,authReady:false,session:null,participantName:'',
   authEmail:'',otpSent:false,authBusy:false,authError:'',
   metrics:null,metricsState:'',metricsKey:-1,
+  // Synthesis history: version list (metadata, newest first), full bodies by version (immutable, so cached
+  // for good), the version being viewed (null = latest), and the pending-material status from GET /api/synthesize.
+  synVersions:[],synBodies:{},synView:null,synStatus:null,synStatusState:'',synStatusKey:'',
   acc:{submissions:false,suggested:false},suggested:null,suggestedState:'',suggestedKey:-1};   // Voices accordions (open/closed) + suggested-pillar cache   // Home counts; the Submit tab's wizard state lives in W (wizard.js)
 let sb=null;
 
@@ -25,20 +28,25 @@ function mapSubmission(r){return{id:r.id,pillars:r.pillars||[],summary:r.summary
   displayName:r.display_name,timestamp:r.timestamp,mine:r.mine,content:r.content,
   // owner-only (null for everyone else): wizard metadata and private storage paths
   contributionType:r.contribution_type,inputMode:r.input_mode,pillarChoice:r.pillar_choice,
-  audioUrl:r.audio_url,fileUrl:r.file_url,fileName:r.file_name,discoveryAudioUrl:r.discovery_audio_url};}
-function mapSynthesis(r){return r?{commons:r.commons||[],contested:r.contested||[],gaps:r.gaps||[],
-  timestamp:Date.parse(r.created_at),count:r.count,submissionCount:r.submission_count,includedTests:r.included_tests}:null;}
+  audioUrl:r.audio_url,fileUrl:r.file_url,fileName:r.file_name,discoveryAudioUrl:r.discovery_audio_url,
+  // Public source metadata has no raw source text or uploader identity.
+  sourceType:r.source_type||'individual',sourceTitle:r.source_title||'',voiceLabels:r.voice_labels||[]};}
+// Only public columns: the provenance columns (submission_ids, voice_keys) are not readable from the browser.
+const SYN_META='version,created_at,voice_count,contribution_count,source_count,included_tests,provenance';
+function mapVersion(r){return{version:r.version,timestamp:Date.parse(r.created_at),count:r.voice_count,submissionCount:r.contribution_count,
+  sourceCount:r.source_count,includedTests:r.included_tests,provenance:r.provenance};}
 
 async function refresh(){
   if(!sb)return;
   try{
-    const [subs,syn]=await Promise.all([
+    const [subs,vers]=await Promise.all([
       sb.rpc('list_submissions',{}),
-      sb.from('synthesis').select('*').eq('id',1).maybeSingle()]);
-    if(subs.error)throw subs.error;if(syn.error)throw syn.error;
-    const next=(subs.data||[]).map(mapSubmission),nextSyn=mapSynthesis(syn.data);
-    const changed=!S.loaded||JSON.stringify(next)!==JSON.stringify(S.submissions)||JSON.stringify(nextSyn)!==JSON.stringify(S.synthesis);
-    S.submissions=next;S.synthesis=nextSyn;
+      sb.from('synthesis_versions').select(SYN_META).order('version',{ascending:false}).limit(100)]);
+    if(subs.error)throw subs.error;
+    if(vers.error)console.error('Synthesis history:',vers.error);   // the rest of the app still works without it
+    const next=(subs.data||[]).map(mapSubmission),nextVers=vers.error?S.synVersions:(vers.data||[]).map(mapVersion);
+    const changed=!S.loaded||JSON.stringify(next)!==JSON.stringify(S.submissions)||JSON.stringify(nextVers)!==JSON.stringify(S.synVersions);
+    S.submissions=next;S.synVersions=nextVers;
     const first=!S.loaded;S.loaded=true;
     // Don't re-render the form while someone is typing in it.
     if(changed&&(first||(S.view!=='submit'&&S.view!=='pillars'&&S.view!=='admin')))render();
@@ -288,21 +296,24 @@ function renderVoices(m){
   const bars=PILLARS.map(p=>`<div class="bar-row"><div class="bar-label">${p.emoji} ${p.name}</div><div class="bar-track"><div class="bar-fill" style="width:${((counts[p.id]||0)/mx*100).toFixed(0)}%"></div></div><div class="bar-count">${counts[p.id]||0}</div></div>`).join('');
   const cards=subs.map(s=>{
     const pills=(s.pillars||[]).map(pid=>{const p=PILLARS.find(x=>x.id===pid);return p?`<span class="pill ${s.autoTagged?'auto':''}">${p.emoji} ${p.name}</span>`:''}).join('');
-    const who=s.displayName||'Anonymous',when=s.timestamp?new Date(s.timestamp).toLocaleDateString():'';
+    const who=s.voiceLabels?.length?s.voiceLabels.join(' + '):(s.displayName||'Anonymous'),when=s.timestamp?new Date(s.timestamp).toLocaleDateString():'';
     const isMine=s.mine;
     const displayText=s.summary||'Summary pending...';
     const rawId='raw-'+s.id;
+    const sourceMeta=s.sourceType&&s.sourceType!=='individual'
+      ?` · ${esc(s.sourceType)}${s.sourceTitle?`: ${esc(s.sourceTitle)}`:''}`:'';
     let rawBlock='';
     if(isMine){
       const c=s.content||'';
       const rawPreview=c.length>800?(c.slice(0,800)+'…'):c;
       const rawButton=c?`<button class="raw-toggle" onclick="toggleRaw('${rawId}')">Show your full submission</button>`:'';
-      const testButton=`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
+      const sourceLocked=s.sourceType&&s.sourceType!=='individual';
+      const testButton=sourceLocked?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="setTestFlag('${s.id}',${!s.isTest})">${s.isTest?'Unmark test':'Mark as test'}</button>`;
       const rawContent=c?`<div class="raw-content${S.openRaw.has(rawId)?' show':''}" id="${rawId}">${esc(rawPreview)}</div>`:'';
-      rawBlock=`${rawButton}${testButton}<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button>${rawContent}`;
+      rawBlock=`${rawButton}${testButton}${sourceLocked?'':`<button class="raw-toggle" style="margin-left:16px;color:var(--muted)" onclick="deleteMine('${s.id}')">Delete</button>`}${rawContent}`;
     }
     return`<div class="submission-card${isMine?' mine':''}${s.isTest?' test-card':''}">
-      <div class="submission-meta">${esc(who)} · ${when}${s.autoTagged?' · <span style="color:var(--commons)">auto-tagged</span>':''}${isMine?' · <span class="mine-badge">yours</span>':''}${s.isTest?' · <span class="test-badge">test</span>':''}</div>
+      <div class="submission-meta">${esc(who)} · ${when}${sourceMeta}${s.autoTagged?' · <span style="color:var(--commons)">auto-tagged</span>':''}${isMine?' · <span class="mine-badge">yours</span>':''}${s.isTest?' · <span class="test-badge">test</span>':''}</div>
       <div class="submission-pills">${pills}</div>
       <div class="submission-text"><span class="summary-text">${esc(displayText)}</span></div>${rawBlock}</div>`;
   }).join('');
@@ -397,54 +408,101 @@ function synGapRow(g){
 function synSection(key,tag,title,count,rows,empty){
   const id='syn-'+key,open=!!S.acc[id];
   return`<section class="acc syn-sec ${key}${open?' open':''}" id="acc-${id}">
-    <button class="syn-shead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="acc-chev rot" aria-hidden="true">▸</span><span class="syn-tag">${tag}</span><span class="syn-stitle">${title}</span><span class="syn-scount">(${count})</span></button>
+    <button class="syn-shead" data-acc-head aria-expanded="${open}" aria-controls="acc-body-${id}" onclick="toggleAcc('${id}')"><span class="syn-tag">${tag}</span><span class="syn-stitle">${title}</span><span class="syn-scount">${count}</span><i class="ti ti-chevron-down acc-chev rot" aria-hidden="true"></i></button>
     <div class="acc-body${open?' settled':''}" id="acc-body-${id}" style="max-height:${open?'none':'0'}"${open?'':' inert'}><div class="syn-rows">${rows||`<p class="acc-empty">${empty}</p>`}</div></div></section>`;
 }
 function renderSynthesisResult(syn){
   const commons=(syn.commons||[]).map(synCommons),contested=(syn.contested||[]).map(synContested),gaps=syn.gaps||[];
   const covered=new Set([...(syn.commons||[]),...(syn.contested||[])].map(c=>c.pillarId??c.pillar)).size;
-  const stat=(icon,color,num,label)=>`<div class="syn-stat"><i class="ti ti-${icon}" style="color:${color}" aria-hidden="true"></i><div class="syn-num">${num}</div><div class="syn-slabel">${label}</div></div>`;
+  const stat=(icon,color,num,label)=>`<div class="syn-stat"><div class="syn-slabel"><i class="ti ti-${icon}" style="color:${color}" aria-hidden="true"></i>${label}</div><div class="syn-num">${num}</div></div>`;
   return`<div class="syn">
-    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+'/12','Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
+    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+'<span class="syn-of"> / 12</span>','Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
     ${synSection('commons','The Commons','Where we agree',commons.length,commons.map(c=>synPillarRow('commons',c)).join(''),'No shared ground found yet.')}
     ${synSection('contested','Contested','Where we diverge',contested.length,contested.map(c=>synPillarRow('contested',c)).join(''),'No open disagreements found.')}
     ${synSection('gaps','Gaps','What’s missing',gaps.length,gaps.map(synGapRow).join(''),'Every pillar was addressed.')}
   </div>`;
 }
 
+// ---------- Synthesis page: a snapshot history. Old versions are read back exactly as stored, never re-run. ----------
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+const synDay=(ts,year)=>new Date(ts).toLocaleDateString('en-US',year?{month:'long',day:'numeric',year:'numeric'}:{month:'long',day:'numeric'});
+const synCounts=v=>`${plural(v.count??0,'voice')} · ${plural(v.submissionCount??0,'contribution')}`;
+function shownVersion(){return S.synVersions.find(v=>v.version===S.synView)||S.synVersions[0]||null;}
+function pickSynVersion(v){S.synView=v===''?null:Number(v);if(S.synView===S.synVersions[0]?.version)S.synView=null;render();}
+const synLoading=new Set();
+async function loadSynBody(n){   // undefined = not loaded yet, false = failed
+  if(synLoading.has(n))return;synLoading.add(n);
+  try{
+    const {data,error}=await sb.from('synthesis_versions').select(SYN_META+',commons,contested,gaps').eq('version',n).maybeSingle();
+    if(error)throw error;
+    S.synBodies[n]=data?{...mapVersion(data),commons:data.commons||[],contested:data.contested||[],gaps:data.gaps||[]}:false;
+  }catch(e){console.error(e);S.synBodies[n]=false;}
+  synLoading.delete(n);
+  if(S.view==='synthesis')render();
+}
+// Re-checked only when the visible submissions, the latest version or the include-tests choice change.
+async function fetchSynStatus(key,includeTests){
+  S.synStatusKey=key;S.synStatusState='loading';
+  try{
+    const r=await fetch('/api/synthesize'+(includeTests?'?includeTests=1':''));const d=await r.json();
+    if(!r.ok)throw new Error(d.error||('status '+r.status));
+    if(S.synStatusKey!==key)return;S.synStatus=d;S.synStatusState='ok';
+  }catch(e){console.error(e);if(S.synStatusKey===key)S.synStatusState='failed';}
+  if(S.view==='synthesis')render();
+}
+function synStatusLine(st){
+  if(!st||!S.synVersions.length)return'';
+  const p=st.pending,line=(kind,html)=>`<p class="syn-status ${kind}"><span class="syn-dot" aria-hidden="true"></span><span>${html}</span></p>`;
+  if(p.contributions>0)return line('pending',`<strong>${plural(p.contributions,'new contribution')}</strong> from ${plural(p.voices,'voice')} ${p.contributions===1?'is':'are'} waiting for the next synthesis.`);
+  if(p.removed>0)return line('pending',`<strong>${plural(p.removed,'contribution')}</strong> in the latest synthesis ${p.removed===1?'has':'have'} since been removed or marked as test. The next synthesis will leave ${p.removed===1?'it':'them'} out.`);
+  return line('current','Current through all submitted contributions.');
+}
 function renderSynthesis(m){
   if(!sb){setupNeeded(m);return;}
   const real=S.synthIncludeTests?S.submissions:S.submissions.filter(s=>!s.isTest);
-  if(!S.submissions.length){m.innerHTML=`<h2>Synthesis</h2><p class="subtitle">Once voices come in, AI sorts everything into three categories.</p>
+  if(!S.submissions.length&&!S.synVersions.length){m.innerHTML=`<h2>Collective Synthesis</h2><p class="subtitle">Once voices come in, AI sorts everything into three categories.</p>
     <div class="preview-block" style="border-color:var(--commons)"><div class="preview-title"><span class="section-tag tag-commons" style="margin:0">The Commons</span></div><p>Topics where voices broadly agree. Easy wins — ratify quickly. Each shows the pillar, consensus summary, and strength.</p></div>
     <div class="preview-block" style="border-color:var(--contested)"><div class="preview-title"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span></div><p>Topics where voices diverge. Your discussion agenda — the real debates. Each shows competing positions and the core tension.</p></div>
     <div class="preview-block" style="border-color:var(--gaps)"><div class="preview-title"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span></div><p>Pillars nobody addressed. Blind spots to assign or discuss.</p></div>
     <div style="text-align:center;margin-top:16px"><button class="btn btn-primary" onclick="nav('submit')">Add the first voice</button></div>`;return;}
-  let sb_='';
-  if(S.synthesizing){
-    sb_=`<div class="card"><div class="loading"><div class="spinner"></div>Reading all voices and finding patterns...</div></div>`;
-  }else if(S.synthesis){
-    const syn=S.synthesis,ts=syn.timestamp?new Date(syn.timestamp).toLocaleString():'';
-    const participantText=`${syn.count||'?'} participant${syn.count===1?'':'s'}`;
-    const contributionText=syn.submissionCount?` · ${syn.submissionCount} contribution${syn.submissionCount===1?'':'s'}`:'';
-    sb_=`<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Last run: ${ts} · ${participantText}${contributionText} · ${syn.includedTests?'tests included':'tests excluded'}</p>${renderSynthesisResult(syn)}`;
-  }else{sb_=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once synthesis runs.</p></div>
+  // pending-material status (counts only)
+  const incTests=S.isAdmin&&S.synthIncludeTests;
+  const key=`${S.submissions.map(s=>s.id+(s.isTest?'t':'')).join()}|${S.synVersions[0]?.version??0}|${incTests}`;
+  if(S.synStatusKey!==key)fetchSynStatus(key,incTests);
+  const st=S.synStatusState==='ok'?S.synStatus:null;
+
+  const v=shownVersion(),latest=S.synVersions[0];
+  let meta='',picker='',older='',body='';
+  if(v){
+    const syn=S.synBodies[v.version];
+    if(syn===undefined)loadSynBody(v.version);
+    const opts=S.synVersions.map(x=>`<option value="${x.version}"${x.version===v.version?' selected':''}>Version ${x.version} · ${new Date(x.timestamp).toLocaleDateString('en-US',{month:'short',day:'numeric'})}${x===latest?' (latest)':''}</option>`).join('');
+    picker=`<div class="syn-versions"><label for="syn-version">Viewing version</label><div class="syn-select"><select id="syn-version" onchange="pickSynVersion(this.value)">${opts}</select><i class="ti ti-chevron-down" aria-hidden="true"></i></div></div>`;
+    meta=`<p class="syn-meta"><strong>${synDay(v.timestamp,true)}</strong> <span class="syn-sep" aria-hidden="true">/</span> ${plural(v.count??0,'voice')} <span class="syn-sep" aria-hidden="true">/</span> ${plural(v.submissionCount??0,'contribution')}</p>`;
+    if(v!==latest)older=`<p class="syn-status older">You’re viewing an earlier snapshot. <button class="raw-toggle" onclick="pickSynVersion('')">Show the latest</button></p>`;
+    body=syn?renderSynthesisResult(syn):syn===false?`<p class="syn-status">Couldn’t load this version. Try again in a moment.</p>`
+      :`<div class="card"><div class="loading"><div class="spinner"></div>Loading synthesis…</div></div>`;
+  }else{body=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once the first synthesis is created.</p></div>
     <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>
     <div class="preview-block"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span><p style="margin-top:8px">Uncovered pillars appear here.</p></div>`;}
-  const hasAny=S.submissions.length>0;
+  if(S.synthesizing)body=`<div class="card"><div class="loading"><div class="spinner"></div>Reading all voices and finding patterns...</div></div>`;
+
+  // Project lead: create a new version, only when something changed since the latest one.
   const testCount=S.submissions.filter(s=>s.isTest).length;
-  const showControls=S.isAdmin&&!S.synthesizing&&hasAny;
-  m.innerHTML=`<h2>Synthesis</h2><p class="subtitle">AI analysis of all voices.</p>${sb_}
-  ${showControls?`<div style="margin-top:20px;text-align:center">
-    ${testCount?`<div class="form-row" style="justify-content:center;margin-bottom:12px">
-      <div class="toggle-row" onclick="S.synthIncludeTests=!S.synthIncludeTests;render()"><div class="toggle toggle-sm ${S.synthIncludeTests?'on':''}" style="${S.synthIncludeTests?'background:var(--muted)':''}"></div><span>Include test submissions (${testCount})</span></div>
-    </div>`:''}
-    ${real.length>0
-      ?`<button class="btn btn-primary" onclick="runSynthesis()">Run synthesis on ${real.length} contributions</button>
-         <p style="font-size:12px;color:var(--muted);margin-top:6px">${S.synthIncludeTests?'Including test submissions':'Test submissions excluded'}</p>`
-      :`<p style="font-size:13px;color:var(--muted)">All ${testCount} submissions are tests. Toggle "Include test submissions" above to analyze them.</p>`}
-  </div>`:''}
-  ${!S.isAdmin&&!S.synthesis?'<p style="font-size:13px;color:var(--muted);text-align:center;margin-top:16px">Only the project lead can trigger synthesis.</p>':''}`;
+  let toggle='',action='';
+  if(S.isAdmin&&!S.synthesizing&&S.submissions.length){
+    const canCreate=st?st.pending.changed:S.synStatusState==='failed';   // if the check failed, the server still refuses a no-change run
+    if(testCount)toggle=`<div class="toggle-row" onclick="S.synthIncludeTests=!S.synthIncludeTests;render()"><div class="toggle toggle-sm ${S.synthIncludeTests?'on':''}" style="${S.synthIncludeTests?'background:var(--muted)':''}"></div><span>Include test submissions (${testCount})</span></div>`;
+    action=!real.length?`<p class="syn-run-note">All ${testCount} submissions are tests. Toggle "Include test submissions" to analyze them.</p>`
+      :canCreate?`<button class="btn btn-amber syn-create" onclick="runSynthesis()"><i class="ti ti-bolt" aria-hidden="true"></i>Create new synthesis</button>`
+      :st?'':`<p class="syn-run-note">Checking for new contributions…</p>`;
+  }
+  const lead=!S.isAdmin&&!latest?'<p class="syn-run-note">Only the project lead can create a synthesis.</p>':'';
+  const status=synStatusLine(st);
+  const foot=status||toggle||action||lead?`<div class="syn-foot"><div class="syn-foot-l">${status}${toggle}${lead}</div>${action?`<div class="syn-foot-r">${action}</div>`:''}</div>`:'';
+  m.innerHTML=`<div class="syn syn-page">
+    <div class="syn-top"><div class="syn-titles"><p class="syn-eyebrow syn-intro">AI analysis of all voices</p><h2>Collective Synthesis</h2>${meta}</div>${picker}</div>
+    ${older}${body}${foot}</div>`;
 }
 
 // ---------- Admin page (project lead) ----------
@@ -583,12 +641,14 @@ async function runSynthesis(){
   if(!real.length)return alert('No submissions to analyze.');
   S.synthesizing=true;render();
   try{
-    await api('/api/synthesize',{includeTests:S.synthIncludeTests});
-    S.synthesizing=false;await refresh();render();
+    const r=await api('/api/synthesize',{includeTests:S.synthIncludeTests});
+    S.synthesizing=false;S.synView=null;S.synStatusKey='';   // show the latest, re-check pending material
+    await refresh();render();
+    showToast(r.unchanged?`Nothing new since Version ${r.version}, so no new synthesis was needed`:`Version ${r.version} created`);
   }catch(e){
     S.synthesizing=false;
     if(e.status===401){adminEnded();alert('Your admin session has ended. Log in again from the Admin link at the bottom of Home.');}
-    else{render();alert('Error: '+(e.message||'synthesis failed'));}
+    else{S.synStatusKey='';render();alert('Error: '+(e.message||'synthesis failed'));}
   }}
 
 function showToast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}

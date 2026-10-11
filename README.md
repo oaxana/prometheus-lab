@@ -39,11 +39,11 @@ A private web app where a crew can contribute anonymous (or named) positions on 
 - **Verified participant, not an account workflow:** before a real contribution, enter an email and the Supabase one-time code. No password, username or onboarding. The normal Supabase session persists and refreshes on that browser.
 - **Anonymous by default**; optionally use one saved display name/handle. The email and Auth identity are never public and never sent to Claude.
 - **Voices:** a per-pillar coverage chart plus a card per submission showing the AI *summary*, tags and date. Auth ownership makes "yours", raw-text access, **mark/unmark as test**, and **delete** work after reload and on another device signed into the same email. Filters: "Show tests", "Mine only".
-- **Synthesis:** the latest saved result is visible to everyone.
+- **Synthesis:** a history of snapshots ("Collective Synthesis", v1, v2, …). Everyone sees the latest by default, can pick an older version from the dropdown (shown exactly as stored, never re-run), and sees how many contributions are waiting for the next synthesis.
 
 **For the project lead** (after logging in on the **Admin** page: muted link at the bottom of Home, or `/#admin`)
 - **Unlock all tabs** (Admin page): opens Pillars, Voices and Synthesis without submitting first, for that admin's browser session only. Everyone else still unlocks them by submitting.
-- **Run synthesis** on the Synthesis tab, optionally including test submissions.
+- **Create New Synthesis** on the Synthesis tab, optionally including test submissions. The button only appears when there is new material (or something included before was deleted/marked test); with nothing new the server returns the latest version without calling Claude. Every new version is made from ALL eligible contributions, never from the previous synthesis, so minority points can't drift away over successive runs.
 - Results attribute each view to named participants; anonymous submitters are counted as distinct participants ("3 anonymous"), not submission rows.
 
 ## How it works
@@ -85,7 +85,7 @@ api/                     Vercel serverless functions
   _shared.js             model name, pillar names, Claude client, error handling ("_" = not a route)
   summarize.js           POST: text/images/PDFs → { pillars, summary, autoTagged }
   map-pillars.js         POST: free-form text → { matched, newIdeas, reasoning } (wizard step 3)
-  synthesize.js          POST (admin cookie): builds + stores the commons/contested/gaps synthesis
+  synthesize.js          GET: pending-material counts. POST (admin cookie): creates a new synthesis version (or returns the latest if nothing changed)
   admin.js               GET: am I admin? POST: log in (checks ADMIN_PASSWORD) / log out
   google-doc.js          POST: Google Docs/Slides link → { name, kind, text }
 middleware.js            crew password gate in front of everything (pages, config.js, /api/*)
@@ -157,6 +157,15 @@ cp .env.example .env        # fill in the values
 npx vercel dev              # serves public/, api/ and the password gate at http://localhost:3000
 ```
 
+## Local Development Workflow
+
+- Do development work on `codex-dev`, never directly on `main`, and check `git status` before substantial changes.
+- Install with `npm install` when needed, run locally with `npx vercel dev`, and preview at `http://localhost:3000` before merging.
+- Never expose or commit `.env`, `.env.local`, API keys, Supabase credentials, Vercel secrets, or any other secrets.
+- Merge `codex-dev` into `main` only when the project owner explicitly asks; deploy to production/Vercel only after the local version is approved.
+- Make changes locally first. Never delete or overwrite working code, push destructive changes, or change authentication, database structure, environment variables, Vercel/Supabase settings, or production infrastructure without explicit approval.
+- Any coding agent working here must inspect the local repository and use the local preview rather than relying on the deployed website.
+
 ## Using the app
 
 **Crew:** open the site → enter the crew password → browse freely. The first time you contribute, Submit asks for an email and one-time code. After verification choose **Anonymous** or, after saving one display name, **Submit as _name_**. Supabase keeps the session usable on that browser until sign-out, invalidation, or cleared site data.
@@ -186,7 +195,7 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 | Deleting / re-flagging submissions | `delete_my_submission()` and `set_my_submission_test()` compare real rows to `auth.uid()` server-side. Predictable test/legacy UIDs cannot mutate rows through public RPCs. |
 | Named submissions | `set_my_display_name()` saves one non-unique name/handle. Named rows use that saved value; edits update that participant's existing named rows while anonymous rows stay anonymous. |
 | Claude synthesis input | The server groups rows by stable owner, then replaces all UUIDs/legacy UIDs with run-local labels (`Participant A…`). Claude receives no email, UUID, session data, or public display name. Afterward, the server maps source labels to public names or distinct anonymous counts and scrubs run-local labels from prose. |
-| Synthesis table | Readable by anyone with the anon key, writable only by the service-role key (server). |
+| Synthesis tables | `synthesis_versions` public columns and the `synthesis` mirror are readable by anyone with the anon key; the provenance columns (`submission_ids`, `voice_keys`) are not. Only the service-role key (server) writes, and versions can never be updated. |
 | Admin login and running synthesis | `/api/admin` compares the password to `ADMIN_PASSWORD` server-side (constant time, 1 s delay on a miss) and sets an HttpOnly, SameSite=Strict, session-only cookie holding a keyed hash, never the password. `/api/synthesize` re-checks that cookie on every run. Changing `ADMIN_PASSWORD` logs every admin out. "Unlock all tabs" is a plain session cookie that only counts while the admin cookie is valid; tab locks are a courtesy, not a privacy boundary. |
 | Claude API key, service-role key | Server environment variables only; never in the browser or repo. |
 | Google link fetching | Strict URL pattern; only `docs.google.com` and `*.googleusercontent.com` are ever contacted; redirects re-checked on every hop; 1 MB cap. |
@@ -207,7 +216,8 @@ npx vercel dev              # serves public/, api/ and the password gate at http
 - `submissions`: `id`, `pillars int[]` (1–12), `content` (≤100,000 chars, private), `summary`, `auto_tagged`, `is_test`, `participant_id` (private Auth owner), nullable legacy/test `uid`, public `display_name` snapshot (`''` means anonymous), `created_at`.
 - `pillar_discovery_inputs`: the wizard's step-2 answer (`participant_id`, `input_text`, `input_type` text/voice, `audio_url`, `ai_mapping` jsonb, `is_anonymous`, `is_test`). Private: no browser read path at all; only the RPCs below and the service-role key touch it, so it can be analysed independently of submissions.
 - Wizard columns on `submissions`: `contribution_type`, `input_mode` (text/voice/upload), `pillar_choice` (selected / not_sure / something_else), `audio_url`, `file_url`, `file_name`, `discovery_input_id`. `audio_url`/`file_url` hold a **storage path** (`<participant uuid>/<run>/<file>`), or for `file_url` a Google Docs/Slides link. They are returned only to the owner. (The original brief proposed `selected_pillars`, `original_text` and `synthesized_summary`; those are the existing `pillars`, `content` and `summary`, so they were not duplicated.)
-- `synthesis`: single row (`id = 1`): `commons`, `contested`, `gaps` (jsonb), `count` (distinct participants), `submission_count`, `included_tests`, `created_at`.
+- `synthesis_versions`: one immutable row per synthesis (an update trigger refuses changes). Public columns: `version`, `created_at`, `commons`, `contested`, `gaps`, `voice_count` (distinct voices), `contribution_count`, `source_count`, `included_tests`, `provenance` (`exact`, or `reconstructed` for the pre-versioning synthesis backfilled as v1). Private columns (not granted to browser roles): `submission_ids` and `voice_keys`, the exact inputs. Only the server inserts.
+- `synthesis`: single row (`id = 1`), now only a mirror of the latest version for older frontends: `commons`, `contested`, `gaps` (jsonb), `count` (distinct participants), `submission_count`, `included_tests`, `created_at`.
 
 **Functions** (the only normal browser write/read path for submissions; all `security definer`)
 - `submit_submission(...)` → row UUID; authenticated only, owner comes from `auth.uid()`, and named mode reads the saved profile name. The wizard fields are optional extras; file paths must be inside the caller's own storage folder (or a Google link) and a linked discovery input must be the caller's.
@@ -245,7 +255,8 @@ All of them require the crew cookie (otherwise `401 {code:"crew_login"}`).
 | `GET /api/metrics` | none | `{ voices, pillarsCovered, contributions }`: real (non-test) rows only; voices counted by participant id (old rows by browser uid). Uses the server-side key; behind the crew gate like every `/api/*`. Reads up to 1,000 rows |
 | `POST /api/map-pillars` | `{ text }` | `{ matched: number[], newIdeas: string[], reasoning }`. Ids are validated against the pillar list; text capped at 8,000 chars. The browser falls back to the plain pillar grid if this fails |
 | `POST /api/summarize` | `{ text, selectedPillars?, noTag?, contributionType?, attachments?: [{name, mediaType, data(base64)}] }` | `{ pillars, summary, autoTagged, attachmentsSkipped? }`. Text capped at 8,000 chars; ≤4 attachments, 3 MB total; images/PDFs only |
-| `POST /api/synthesize` | `{ includeTests? }` + the admin session cookie | The synthesis (also stored). Reads up to 1,000 submissions, 6,000 chars each |
+| `GET /api/synthesize?includeTests=1` | — | `{ latestVersion, eligible: {contributions, voices}, pending: {contributions, voices, newVoices, removed, changed} }`, counts only |
+| `POST /api/synthesize` | `{ includeTests? }` + the admin session cookie | A new stored version, or the latest one with `unchanged: true` when nothing changed (no Claude call). Reads up to 1,000 submissions, 6,000 chars each; 409 if another run saved the same version number first |
 | `POST /api/google-doc` | `{ url }` | `{ name, kind, text }`. Public Docs/Slides only |
 | `GET /api/admin` | none | `{ admin }`: is this browser logged in as admin |
 | `POST /api/admin` | `{ action: 'login', password }` or `{ action: 'logout' }` | `{ admin }` and sets/clears the `pl_admin` cookie. Wrong password → 401 after 1 s; no `ADMIN_PASSWORD` → 503 |
@@ -257,7 +268,7 @@ All suites live in `tests/` and need **no real Anthropic, Supabase or Google acc
 ```bash
 npm install                 # once, in the repo root (the tests import the API code)
 cd tests && npm install     # once; uses your installed Google Chrome (or: npx playwright install chromium, PW_CHANNEL=chromium)
-npm test                    # all 16 suites, ~3 min   (npm test -- synthesis  runs one)
+npm test                    # all 20 suites, ~3 min   (npm test -- synthesis  runs one)
 ```
 
 | Suite | Covers |

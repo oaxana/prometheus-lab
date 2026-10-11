@@ -37,7 +37,7 @@ globalThis.fetch = async (u, o) => {
   return realFetch(u, o);
 };
 
-const db = { submissions: [], discovery: [], objects: [], synthesis: null, participants: new Map(), authUsers: new Map(), refreshTokens: new Map() };
+const db = { submissions: [], discovery: [], objects: [], synthesis: null, synthesisVersions: [], participants: new Map(), authUsers: new Map(), refreshTokens: new Map(), sources: [], contributors: [], sourceContributors: [], submissionContributors: [] };
 let mapMode = 'ok'; // 'ok' | 'fail'
 let metricsMode = 'ok'; // 'ok' | 'fail'
 let synthMode = 'full'; // 'full' | 'sparse' (sparse: out-of-range numbers, empty fields)
@@ -194,6 +194,9 @@ async function fakeSupabase(req, res, url, body) {
         ? { contribution_type: s.contribution_type ?? null, input_mode: s.input_mode || 'text', audio_url: s.audio_url ?? null, file_url: s.file_url ?? null, file_name: s.file_name ?? null,
             discovery_audio_url: db.discovery.find((d) => d.id === s.discovery_input_id)?.audio_url ?? null }
         : { contribution_type: null, input_mode: null, audio_url: null, file_url: null, file_name: null, discovery_audio_url: null }),
+      source_type: db.sources.find((x) => x.id === s.source_id)?.source_type || 'individual',
+      source_title: db.sources.find((x) => x.id === s.source_id)?.title || null,
+      voice_labels: db.submissionContributors.filter((x) => x.submission_id === s.id).map((x) => db.sourceContributors.find((sc) => sc.id === x.source_contributor_id)?.source_label).filter(Boolean),
     }));
     return json(res, 200, rows);
   }
@@ -218,6 +221,50 @@ async function fakeSupabase(req, res, url, body) {
       contribution_type: (input.p_contribution_type || '').trim() || null, input_mode: input.p_input_mode || 'text', pillar_choice: input.p_pillar_choice || 'selected',
       audio_url: input.p_audio_url ?? null, file_url: input.p_file_url ?? null, file_name: input.p_file_name ?? null, discovery_input_id: input.p_discovery_input_id ?? null });
     return json(res, 200, db.submissions.at(-1).id);
+  }
+  if (p === '/rpc/submit_source') {
+    if (!user) return json(res, 401, { message: 'Authentication required' });
+    const i = JSON.parse(body || {}), type = i.p_source_type;
+    if (!['individual', 'transcript', 'document'].includes(type)) return json(res, 400, { message: 'Bad source type' });
+    const raw = String(i.p_raw_content || '').trim(), title = String(i.p_source_title || '').trim() || (type === 'individual' ? 'Individual contribution' : '');
+    if (!raw || !title) return json(res, 400, { message: 'Source title/content required' });
+    const own = (v) => v == null || v.startsWith(user.id + '/');
+    if (!own(i.p_audio_url) || !(own(i.p_file_url) || /^https:\/\/docs\.google\.com\//.test(i.p_file_url))) return json(res, 403, { message: 'File must be in your own storage folder.' });
+    const name = db.participants.get(user.id)?.display_name || '';
+    if (type === 'individual' && !i.p_anonymous && !name) return json(res, 400, { message: 'Set a display name before submitting by name.' });
+    const src = { id: randomUUID(), source_type: type, uploader_participant_id: user.id, title, raw_content: raw, original_audio_url: i.p_audio_url ?? null, original_file_url: i.p_file_url ?? null, original_file_name: i.p_file_name ?? null };
+    db.sources.push(src);
+    const people = Array.isArray(i.p_contributors) ? i.p_contributors : [], sourcePeople = [];
+    const addPerson = (label, role, detected = false) => {
+      const sc = { id: randomUUID(), source_id: src.id, contributor_id: null, source_label: label, contributor_role: role, detected_from_source: detected, identity_confirmed: role === 'individual' || role === 'author', position: sourcePeople.length };
+      if (role === 'individual') {
+        let c = db.contributors.find((x) => x.participant_id === user.id);
+        if (!c) { c = { id: randomUUID(), participant_id: user.id, identity_key: 'participant:' + user.id, display_name: i.p_anonymous ? '' : name }; db.contributors.push(c); }
+        sc.contributor_id = c.id;
+      }
+      if (role === 'author') {
+        const key = 'author:' + label.replace(/\s+/g, ' ').trim().toLowerCase(); let c = db.contributors.find((x) => x.identity_key === key);
+        if (!c) { c = { id: randomUUID(), participant_id: null, identity_key: key, display_name: label }; db.contributors.push(c); }
+        sc.contributor_id = c.id;
+      }
+      db.sourceContributors.push(sc); sourcePeople.push(sc); return sc;
+    };
+    if (type === 'individual') addPerson(i.p_anonymous ? 'Anonymous contribution' : name, 'individual');
+    else if (type === 'transcript') (people.length ? people : [{ label: 'Unlabeled transcript', detected: false }]).forEach((v) => addPerson(String(v.label || '').trim(), 'speaker', !!v.detected));
+    else (people.length ? people : [{ label: 'Unattributed document' }]).forEach((v) => addPerson(String(v.label || '').trim(), people.length ? 'author' : 'unattributed'));
+    const rows = Array.isArray(i.p_contributions) ? i.p_contributions : [];
+    if (!rows.length || ((type === 'individual' || type === 'document') && rows.length !== 1)) return json(res, 400, { message: 'Wrong derived row count' });
+    for (const row of rows) {
+      const sub = { id: randomUUID(), ts: Date.now(), pillars: row.pillars || [], content: row.content, summary: row.summary || '', auto_tagged: !!row.auto_tagged, is_test: !!i.p_is_test, participant_id: user.id, uid: null,
+        display_name: type === 'individual' && !i.p_anonymous ? name : '', contribution_type: (i.p_contribution_type || '').trim() || null, input_mode: i.p_input_mode || 'text', pillar_choice: row.pillar_choice || 'selected',
+        audio_url: i.p_audio_url ?? null, file_url: i.p_file_url ?? null, file_name: i.p_file_name ?? null, discovery_input_id: type === 'individual' ? i.p_discovery_input_id ?? null : null, source_id: src.id };
+      db.submissions.push(sub);
+      const labels = type === 'individual' ? [sourcePeople[0].source_label] : (row.labels?.length ? row.labels : (type === 'document' ? [sourcePeople[0].source_label] : []));
+      for (const label of labels) { const sc = sourcePeople.find((x) => x.source_label === label); if (!sc) return json(res, 400, { message: 'Unknown source contributor' }); db.submissionContributors.push({ submission_id: sub.id, source_contributor_id: sc.id }); }
+    }
+    const disc = i.p_discovery_input_id ? db.discovery.find((d) => d.id === i.p_discovery_input_id && d.participant_id === user.id) : null;
+    if (disc && type === 'individual') { disc.is_anonymous = i.p_anonymous !== false; disc.is_test = !!i.p_is_test; }
+    return json(res, 200, src.id);
   }
   if (p === '/rpc/save_discovery_input') {
     if (!user) return json(res, 401, { message: 'Authentication required' });
@@ -265,13 +312,37 @@ async function fakeSupabase(req, res, url, body) {
     res.writeHead(201); return res.end();
   }
   if (p === '/submissions' && req.method === 'GET') {
-    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id, discovery_input_id: s.discovery_input_id ?? null })));
+    return json(res, 200, db.submissions.map((s) => ({ id:s.id,pillars: s.pillars, pillar_choice: s.pillar_choice || 'selected', content: s.content, summary: s.summary, is_test: s.is_test, created_at: new Date(s.ts).toISOString(), display_name: s.display_name, uid: s.uid, participant_id:s.participant_id, discovery_input_id: s.discovery_input_id ?? null, source_id: s.source_id ?? null })));
+  }
+  if (p === '/sources' && req.method === 'GET') return json(res, 200, db.sources.map((s) => ({ id: s.id, source_type: s.source_type })));
+  if (p === '/submission_contributors' && req.method === 'GET') {
+    return json(res, 200, db.submissionContributors.map((j) => {
+      const sc = db.sourceContributors.find((x) => x.id === j.source_contributor_id);
+      const c = db.contributors.find((x) => x.id === sc?.contributor_id);
+      return { submission_id: j.submission_id, source_contributors: sc ? { id: sc.id, source_id: sc.source_id, source_label: sc.source_label, contributor_id: sc.contributor_id, contributors: c ? { id: c.id, participant_id: c.participant_id, display_name: c.display_name } : null } : null };
+    }));
   }
   if (p === '/synthesis' && req.method === 'GET') {
     return json(res, 200, db.synthesis ? [db.synthesis] : []); // PostgREST array mode, as supabase-js maybeSingle() sends
   }
   if (p === '/synthesis' && req.method === 'POST') {
     db.synthesis = JSON.parse(body); res.writeHead(201); return res.end();
+  }
+  // Versions: browsers may only select the public columns (column grants in supabase-setup.sql).
+  if (p === '/synthesis_versions' && req.method === 'GET') {
+    const cols = (url.searchParams.get('select') || '*').split(',').map((c) => c.trim());
+    const service = req.headers.apikey === 'service-test';
+    if (!service && cols.some((c) => c === '*' || c === 'submission_ids' || c === 'voice_keys')) return json(res, 401, { code: '42501', message: 'permission denied for table synthesis_versions' });
+    let rows = [...db.synthesisVersions].sort((a, b) => b.version - a.version);
+    const eq = url.searchParams.get('version'); if (eq) rows = rows.filter((r) => r.version === Number(eq.replace('eq.', '')));
+    const limit = Number(url.searchParams.get('limit')); if (limit) rows = rows.slice(0, limit);
+    return json(res, 200, rows.map((r) => (cols.includes('*') ? r : Object.fromEntries(cols.map((c) => [c, r[c]])))));
+  }
+  if (p === '/synthesis_versions' && req.method === 'POST') {
+    if (req.headers.apikey !== 'service-test') return json(res, 401, { message: 'Service role required' });
+    const rows = [].concat(JSON.parse(body));
+    if (rows.some((r) => db.synthesisVersions.some((v) => v.version === r.version))) return json(res, 409, { code: '23505', message: 'duplicate key value violates unique constraint "synthesis_versions_pkey"' });
+    db.synthesisVersions.push(...rows); res.writeHead(201); return res.end();
   }
   json(res, 404, { message: 'not found ' + p });
 }

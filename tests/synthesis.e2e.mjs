@@ -22,12 +22,12 @@ await p.click('.admin-link'); await p.fill('#admin-password', 'letmein'); await 
 await p.waitForSelector('.admin-switch'); await p.click('.admin-switch');
 await nav('Synthesis');
 await p.click('.toggle-row:has-text("Include test submissions")');
-await p.click('button:has-text("Run synthesis")'); await p.waitForSelector('.syn-sec');
+await p.click('button:has-text("Create New Synthesis")'); await p.waitForSelector('.syn-sec');
 
 // rendering: stats banner, then three levels that all start collapsed
 const settle = () => p.waitForTimeout(450);
 const stats = (await p.locator('.syn-stat').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-check('stats banner: voices, pillars covered, common ground, contested, gaps', stats.join('|') === '4 Voices heard|2/12 Pillars covered|1 Common ground|1 Contested|2 Gaps', stats.join('|'));
+check('stats banner: voices, pillars covered, common ground, contested, gaps', stats.join('|') === 'Voices heard 4|Pillars covered 2 / 12|Common ground 1|Contested 1|Gaps 2', stats.join('|'));
 check('three coloured section groups, all collapsed (level 1)', (await p.locator('.syn-sec').count()) === 3 && (await p.locator('.syn-shead[aria-expanded=true]').count()) === 0 && (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0);
 const secColor = (k) => p.locator(`#acc-syn-${k} .syn-tag`).evaluate((e) => getComputedStyle(e).color);
 check('section colours: green / amber / blue (dark theme)', (await secColor('commons')) === 'rgb(74, 186, 122)' && (await secColor('contested')) === 'rgb(232, 169, 72)' && (await secColor('gaps')) === 'rgb(107, 138, 237)');
@@ -74,7 +74,7 @@ await p.click('#acc-syn-commons .syn-shead'); await settle();
 check('collapsing a section keeps what was open inside it', (await p.locator('#acc-body-syn-commons').evaluate((e) => e.getBoundingClientRect().height)) === 0 && (await p.locator('#acc-syn-commons-10 .syn-phead').getAttribute('aria-expanded')) === 'true');
 await p.click('#acc-syn-commons .syn-shead'); await settle();
 check('phone width: no sideways scrolling', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-const fam = await p.evaluate(() => [getComputedStyle(document.querySelector('.syn')).fontFamily, getComputedStyle(document.querySelector('.syn-num')).fontFamily, getComputedStyle(document.querySelector('.syn-stat')).backgroundColor]);
+const fam = await p.evaluate(() => [getComputedStyle(document.querySelector('.syn')).fontFamily, getComputedStyle(document.querySelector('.syn-tag')).fontFamily, getComputedStyle(document.querySelector('.syn-stat')).backgroundColor]);
 check('fonts: DM Sans body, Space Mono labels; dark surface #1a1a1f', fam[0].includes('DM Sans') && fam[1].includes('Space Mono') && fam[2] === 'rgb(26, 26, 31)', fam.join(' / '));
 const stored0 = (await (await fetch(B + '/__db')).json()).synthesis;
 check('stored synthesis: per-pillar participants are names or "Anonymous" only; contested consensus computed server-side', JSON.stringify(stored0.commons[0].participants) === '["Me","Persona 2","Anonymous"]' && stored0.contested[0].participants.length === 3 && stored0.contested[0].participants.every((n) => ['Me', 'Persona 2', 'Persona 3', 'Anonymous'].includes(n)) && stored0.contested[0].consensus === 67 && !JSON.stringify(stored0).includes(stranger));
@@ -92,17 +92,71 @@ check('two anonymous contributions share one run-local participant source', (pro
 check('no auth UUID, legacy uid, email, or public names sent to model', !prompt.includes(stranger) && !/uid|@example\.com|Persona 2|Persona 3/.test(prompt));
 check('four distinct people despite five contributions', prompt.includes('5 contributions from 4 distinct participants'), prompt.match(/\d contributions from \d distinct participants/)[0]);
 
-// sloppy model output is repaired, not trusted: numbers clamped, missing fields tolerated
+// ---------------- version history
+const llmCalls = async () => (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config).length;
+const versions = async () => (await (await fetch(B + '/__db')).json()).synthesisVersions;
+const runApi = async (body = { includeTests: true }) => (await fetch(B + '/api/synthesize', { method: 'POST', headers: { cookie: await adminCookie(B), 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+const statusApi = async (q = '?includeTests=1') => (await fetch(B + '/api/synthesize' + q)).json();
+const meta = async () => (await p.locator('.syn-meta').innerText()).replace(/\s+/g, ' ');
+check('snapshot header: title, subtitle, then date · voices · contributions on one line', (await p.locator('h2').innerText()) === 'Collective Synthesis' && (await p.locator('.syn-intro').innerText()).toLowerCase() === 'ai analysis of all voices' && /^[A-Z][a-z]+ \d{1,2}, \d{4} \/ 4 voices \/ 5 contributions$/.test(await meta()), await meta());
+await p.waitForSelector('.syn-status');
+check('everything included -> "Current through all submitted contributions."', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === 'Current through all submitted contributions.');
+check('admin: no Create button when nothing is new', (await p.locator('button:has-text("Create New Synthesis")').count()) === 0 && (await p.locator('.syn-run-note').count()) === 0);
+check('one version -> picker already shows it as the latest', (await p.locator('#syn-version option').count()) === 1 && /^Version 1 · [A-Z][a-z]{2} \d{1,2} \(latest\)$/.test(await p.locator('#syn-version option').first().innerText()));
+const v1 = (await versions())[0];
+check('v1 stored with exact provenance: 5 contribution ids, 4 voice keys, 5 sources', v1.version === 1 && v1.provenance === 'exact' && v1.submission_ids.length === 5 && v1.voice_keys.length === 4 && v1.contribution_count === 5 && v1.voice_count === 4 && v1.source_count === 5);
+const callsBefore = await llmCalls();
+const again = await runApi();
+check('no-change rerun returns the latest version without calling the model', again.unchanged === true && again.version === 1 && (await llmCalls()) === callsBefore && (await versions()).length === 1);
+check('no-change rerun returns the stored content', JSON.stringify(again.commons) === JSON.stringify(v1.commons) && again.count === 4 && again.submissionCount === 5);
+const st0 = await statusApi();
+check('status API: integers only, nothing pending', st0.latestVersion === 1 && st0.pending.contributions === 0 && st0.pending.changed === false && st0.eligible.contributions === 5 && st0.eligible.voices === 4 && !JSON.stringify(st0).includes(stranger) && !/[0-9a-f]{8}-[0-9a-f]{4}/.test(JSON.stringify(st0)));
+check('status API without tests: the 3 test rows count as removed from v1', (await statusApi('')).pending.removed === 3);
+const browserRead = await fetch(B + '/supabase/rest/v1/synthesis_versions?select=version,submission_ids', { headers: { apikey: 'anon-test' } });
+check('browser key cannot read the provenance columns', browserRead.status === 401);
+
+// new material: one more from the existing anonymous participant, one from a brand-new person
+const newcomer = '22222222-2222-4222-8222-222222222222';
+await postService('/supabase/rest/v1/submissions', { pillars: [2], content: 'anon thought three', summary: 's', auto_tagged: false, is_test: false, participant_id: stranger, uid: null, display_name: '' });
+await postService('/supabase/rest/v1/submissions', { pillars: [4], content: 'newcomer thought', summary: 's', auto_tagged: false, is_test: false, participant_id: newcomer, uid: null, display_name: '' });
+const st1 = await statusApi();
+check('status API: 2 new contributions from 2 voices, 1 of them new', st1.pending.contributions === 2 && st1.pending.voices === 2 && st1.pending.newVoices === 1 && st1.pending.changed === true);
+await p.evaluate(() => refresh()); await p.waitForSelector('.syn-status.pending');
+check('pending line shown to everyone', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '2 new contributions from 2 voices are waiting for the next synthesis.');
+check('admin: Create New Synthesis appears once there is new material', (await p.locator('button:has-text("Create New Synthesis")').count()) === 1 && (await p.locator('.syn-run-note').count()) === 0);
+
+// sloppy model output is repaired, not trusted: numbers clamped, missing fields tolerated (this run also creates v2)
 await fetch(B + '/__synth?m=sparse');
-const sparse = await (await fetch(B + '/api/synthesize', { method: 'POST', headers: { cookie: await adminCookie(B), 'content-type': 'application/json' }, body: JSON.stringify({ includeTests: true }) })).json();
+const sparse = await runApi();
 await fetch(B + '/__synth?m=full');
+const all = await versions();
+check('second run with new material creates v2 from ALL 7 contributions (not from v1)', sparse.version === 2 && sparse.unchanged === false && all.length === 2 && all[1].submission_ids.length === 7 && all[1].voice_keys.length === 5 && all[1].voice_count === 5 && (await llmCalls()) === callsBefore + 1);
+check('v1 is untouched by the second run', JSON.stringify(all[0]) === JSON.stringify(v1));
+const lastPrompt = (await (await fetch(B + '/__log')).json()).filter((x) => x.anthropic?.output_config).pop().anthropic.messages[0].content;
+check('v2 prompt carries the underlying contributions, not the previous synthesis', lastPrompt.includes('7 contributions from 5 distinct participants') && lastPrompt.includes('newcomer thought') && !lastPrompt.includes('Consent vs practicality'));
+check('old single-row table mirrors the latest version', (await (await fetch(B + '/__db')).json()).synthesis.count === 5);
+const dupe = await fetch(B + '/supabase/rest/v1/synthesis_versions', { method: 'POST', headers: { apikey: 'service-test', 'content-type': 'application/json' }, body: JSON.stringify({ version: 2 }) });
+check('a second version 2 is refused (overlapping runs cannot overwrite)', dupe.status === 409);
+
+// browse: latest shown by default, older version shown exactly as stored, nothing regenerated
+await p.evaluate(() => refresh()); await p.waitForSelector('#syn-version');
+check('picker lists both versions, newest first, latest selected', (await p.locator('#syn-version option').count()) === 2 && /^Version 2 · [A-Z][a-z]{2} \d{1,2} \(latest\)$/.test(await p.locator('#syn-version option').first().innerText()) && /^Version 1 · /.test(await p.locator('#syn-version option').nth(1).innerText()) && (await p.locator('#syn-version').inputValue()) === '2' && (await p.evaluate(() => { const r = document.getElementById('syn-version').getBoundingClientRect().top; return [...document.querySelectorAll('.syn-sec')].every((e) => e.getBoundingClientRect().top > r); })));
+check('latest (v2) shown by default', (await meta()).endsWith('5 voices / 7 contributions') && (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === 'Current through all submitted contributions.');
+const reqs = []; p.on('request', (r) => { if (r.url().includes('/api/synthesize') && r.method() === 'POST') reqs.push(r.url()); });
+const callsV = await llmCalls();
+await p.selectOption('#syn-version', '1'); await p.waitForSelector('.syn-status.older');
+await p.click('#acc-syn-commons .syn-shead').catch(() => {});
+check('selecting v1 shows v1 exactly: its header and its stored pillars', (await meta()).endsWith('4 voices / 5 contributions') && (await p.locator('#acc-syn-commons-10').count()) === 1 && (await p.locator('#acc-syn-contested-1').count()) === 1);
+check('selecting an old version does not regenerate anything', reqs.length === 0 && (await llmCalls()) === callsV && (await versions()).length === 2);
+await p.click('button:has-text("Show the latest")');
+check('"Show the latest" returns to v2', (await meta()).endsWith('5 voices / 7 contributions') && (await p.locator('#syn-version').inputValue()) === '2' && (await p.locator('.syn-status.older').count()) === 0 && (await p.locator('#acc-syn-commons-2').count()) === 1);
 check('sparse output: consensus clamped to 0-100, or taken from the strength label when unusable', sparse.commons[0].consensus === 100 && sparse.commons[1].consensus === 0 && sparse.commons[1].strength === 'emerging');
 check('sparse output: themes/quotes/suggestions capped and trimmed', sparse.commons[1].themes[0].length === 60 && sparse.commons[1].quotes.length === 2 && sparse.gaps[0].suggestions.length === 4);
 check('sparse output: half-empty spectrum is dropped, position values clamped', sparse.contested[0].spectrum === null && sparse.contested[0].positions.map((x) => x.value).join() === '0,100');
 check('sparse output: pillar participants are still names/Anonymous only', sparse.commons[0].participants.length === 1 && sparse.contested[0].participants.length === 2 && !JSON.stringify(sparse).includes(stranger));
 
 // legacy saved synthesis (older shapes, no consensus/participants/spectrum) still renders
-await p.evaluate(() => { S.acc = {}; S.synthesis = { commons: [{ pillar: 'OldC', summary: 'Old summary', strength: 'strong', voices: ['Me', '2 anonymous'] }], contested: [{ pillar: 'Old', positions: ['A view', 'B view'], tension: 't' }], gaps: [{ pillar: 'OldG', note: 'old note' }], timestamp: Date.now(), count: 1 }; render(); });
+await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 99, timestamp: Date.now(), count: 1, submissionCount: 1 }, ...S.synVersions]; S.synView = null; S.synBodies[99] = { commons: [{ pillar: 'OldC', summary: 'Old summary', strength: 'strong', voices: ['Me', '2 anonymous'] }], contested: [{ pillar: 'Old', positions: ['A view', 'B view'], tension: 't' }], gaps: [{ pillar: 'OldG', note: 'old note' }], timestamp: Date.now(), count: 1 }; render(); });
 await p.click('#acc-syn-commons .syn-shead'); await p.click('#acc-syn-contested .syn-shead'); await p.click('#acc-syn-gaps .syn-shead'); await settle();
 await p.click('#acc-syn-commons-OldC .syn-phead'); await p.click('#acc-syn-contested-Old .syn-phead'); await p.click('#acc-syn-gaps-OldG .syn-phead'); await settle();
 check('legacy commons: bar from the strength label, pill counts people from the old voices list, summary shown', (await p.locator('#acc-syn-commons-OldC .syn-meter i').evaluate((e) => e.style.width)) === '85%' && (await p.locator('#acc-syn-commons-OldC .sugg-count').innerText()) === '(3)' && (await p.locator('#acc-syn-commons-OldC .syn-pts li').first().innerText()).includes('Old summary'));

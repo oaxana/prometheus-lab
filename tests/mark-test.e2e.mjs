@@ -23,9 +23,9 @@ await p.screenshot({ path: 'screens/shot-testflag.png', fullPage: true });
 await p.click('nav button:has-text("Home")'); await p.click('.admin-link');
 await p.fill('#admin-password', 'letmein'); await p.click('.admin-login button'); await p.waitForSelector('.admin-control');
 await p.click('nav button:has-text("Synthesis")');
-check('synthesis counts 1 contribution (test excluded)', (await p.locator('button:has-text("Run synthesis")').innerText()).includes('1 contributions'));
+check('synthesis counts 1 contribution (test excluded)', await p.waitForFunction((n) => S.synStatusState === 'ok' && S.synStatus.eligible.contributions === n, 1).then(() => true, () => false));
 await p.click('.toggle-row:has-text("Include test submissions")');
-check('include-tests brings it back (2)', (await p.locator('button:has-text("Run synthesis")').innerText()).includes('2 contributions'));
+check('include-tests brings it back (2)', await p.waitForFunction((n) => S.synStatusState === 'ok' && S.synStatus.eligible.contributions === n, 2).then(() => true, () => false));
 // unmark it again
 await p.click('nav button:has-text("Voices")'); await openSubs(p);
 if (!(await p.locator('.toggle-row:has-text("Show tests") .toggle.on').count())) await p.click('.toggle-row:has-text("Show tests")');

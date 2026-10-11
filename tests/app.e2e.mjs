@@ -181,33 +181,35 @@ await dctx.close(); await fetch(B + '/__metrics?m=ok');
 
 // Synthesis: locked first
 await page.click('nav button:has-text("Synthesis")');
-check('locked: no run button', (await page.locator('button:has-text("Run synthesis")').count()) === 0);
-check('locked: lead-only message', await page.locator('text=Only the project lead can trigger synthesis.').isVisible());
+check('locked: no create button', (await page.locator('button:has-text("Create New Synthesis")').count()) === 0);
+check('locked: lead-only message', await page.locator('text=Only the project lead can create a synthesis.').isVisible());
 check('no admin button or link on the Synthesis page', (await page.locator('main button, main a').filter({ hasText: /unlock|admin|project lead/i }).count()) === 0);
 await page.click('nav button:has-text("Home")'); await page.click('.admin-link');
 await page.fill('#admin-password', 'letmein'); await page.click('.admin-login button'); await page.waitForSelector('.admin-control');
 await page.click('nav button:has-text("Synthesis")');
-await page.waitForSelector('button:has-text("Run synthesis")');
-check('unlocked: run button shows 1 contribution (tests excluded)', (await page.locator('button:has-text("Run synthesis")').innerText()).includes('1 contributions'));
+await page.waitForSelector('button:has-text("Create New Synthesis")');
+check('unlocked: 1 eligible contribution (tests excluded), no "reads all" note', await page.waitForFunction((n) => S.synStatusState === 'ok' && S.synStatus.eligible.contributions === n, 1).then(() => true, () => false) && (await page.locator('.syn-run-note').count()) === 0);
 await page.click('.toggle-row:has-text("Include test submissions")');
-check('include-tests updates count', (await page.locator('button:has-text("Run synthesis")').innerText()).includes('2 contributions'));
+check('include-tests updates count', await page.waitForFunction((n) => S.synStatusState === 'ok' && S.synStatus.eligible.contributions === n, 2).then(() => true, () => false));
 await page.click('.toggle-row:has-text("Include test submissions")');
-await page.click('button:has-text("Run synthesis")');
+await page.click('button:has-text("Create New Synthesis")');
 await page.waitForSelector('.syn-sec');
 check('three section groups rendered and all start collapsed', (await page.locator('.syn-sec').count()) === 3 && (await page.locator('.syn-shead[aria-expanded=true]').count()) === 0);
 await page.click('#acc-syn-commons .syn-shead'); await page.click('#acc-syn-commons .syn-phead'); await page.waitForTimeout(450);
 check('LLM html is escaped', (await page.locator('#acc-syn-commons .syn-detail').innerHTML()).includes('&lt;b&gt;disclosure&lt;/b&gt;'));
-check('last-run line uses participant and contribution counts', (await page.locator('text=/Last run:.*1 participant.*1 contribution.*tests excluded/').count()) === 1);
+check('snapshot header: date · voices · contributions on one line, no version text', /^[A-Z][a-z]+ \d{1,2}, \d{4} \/ 1 voice \/ 1 contribution$/.test((await page.locator('.syn-meta').innerText()).replace(/\s+/g, ' ')));
 await page.screenshot({ path: SHOTS + 'screens/shot-synthesis.png', fullPage: true });
 
 // The server checks the admin cookie on every run: once it is gone, the run is refused and the controls disappear
 const noCookie = await fetch(B + '/api/synthesize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
 check('synthesis API refuses a request without the admin cookie', noCookie.status === 401);
+await page.click('.toggle-row:has-text("Include test submissions")');   // including the test row is new material, so the button returns
+await page.waitForSelector('button:has-text("Create New Synthesis")');
 await ctx.clearCookies({ name: 'pl_admin' });
-await page.click('button:has-text("Run synthesis")');
+await page.click('button:has-text("Create New Synthesis")');
 await page.waitForEvent('dialog');
 await page.waitForFunction(() => !S.synthesizing);
-check('expired admin session -> alert + run controls hidden', dialogs.some((d) => d.includes('admin session has ended')) && (await page.locator('button:has-text("Run synthesis")').count()) === 0);
+check('expired admin session -> alert + run controls hidden', dialogs.some((d) => d.includes('admin session has ended')) && (await page.locator('button:has-text("Create New Synthesis")').count()) === 0);
 
 // Light mode renders (prefers-color-scheme)
 const lctx = await browser.newContext({ viewport: { width: 420, height: 900 }, colorScheme: 'light' });

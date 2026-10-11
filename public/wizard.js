@@ -20,6 +20,7 @@ const wzTime=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 function newRec(){return{blob:null,url:'',mime:'',seconds:0,transcript:'',recording:false,stt:'',path:''};}
 function newWizard(){return{
   step:1,confirmed:false,runId:crypto.randomUUID(),anonymous:true,isTest:false,fromReview:false,focusTitle:false,
+  sourceType:'individual',sourceTitle:'',sourceAuthors:'',
   dMode:null,dText:'',dRec:newRec(),dId:null,dChain:Promise.resolve(),
   mapState:'idle',mapFor:'',mapping:null,mapToken:0,pillars:new Set(),choice:'selected',
   mode:null,text:'',rec:newRec(),file:null,gdoc:null,gdocUrl:'',gdocBusy:false,note:'',ctype:'',submitting:false,
@@ -38,6 +39,7 @@ function wzSyncFields(){
   const v=(id,fn)=>{const e=document.getElementById(id);if(e)fn(e.value);};
   v('discovery-text',x=>W.dText=x);v('transcript-d',x=>W.dRec.transcript=x);v('transcript-r',x=>W.rec.transcript=x);
   v('voice-text',x=>W.text=x);v('upload-note',x=>W.note=x);v('gdoc-url',x=>W.gdocUrl=x);v('contrib-type',x=>W.ctype=x);
+  v('source-title',x=>W.sourceTitle=x);v('source-authors',x=>W.sourceAuthors=x);
   v('edit-text',x=>W.editText=x);v('edit-type',x=>W.editType=x);}
 
 // ---------- navigation ----------
@@ -50,13 +52,18 @@ function wzShowHistory(){wzGo(8);}
 async function wzNext(){
   wzSyncFields();const s=W.step;
   if(!wzValid(s))return;
-  if(s===2){wzGo(3);wzEnsureMapping();return;}
+  if(s===2){
+    wzGo(3);
+    if(wzDiscoveryText())wzEnsureMapping();
+    else{W.mapState='done';W.mapFor='';W.mapping={matched:[],newIdeas:[],reasoning:''};render();}
+    return;
+  }
   if(s===7)return wzSubmit();
   wzGo(W.fromReview&&s!==4?7:s+1);
 }
 function wzValid(s){
-  if(s===1)return !!(W.anonymous||S.participantName||String(S.displayName||'').trim());
-  if(s===2)return !!wzDiscoveryText()&&!W.dRec.recording;
+  if(s===1)return ['individual','transcript','document'].includes(W.sourceType)&&(W.sourceType!=='individual'||!!(W.anonymous||S.participantName||String(S.displayName||'').trim()));
+  if(s===2)return (W.sourceType!=='individual'||!!wzDiscoveryText())&&!W.dRec.recording;
   if(s===3)return W.mapState!=='loading'&&(W.choice!=='selected'||W.pillars.size>0);
   if(s===4)return !!W.mode;
   if(s===5){
@@ -64,6 +71,7 @@ function wzValid(s){
     if(W.mode==='voice')return !!W.rec.blob&&!W.rec.recording&&!!W.rec.transcript.trim();
     if(W.mode==='upload')return !!W.gdoc||(!!W.file&&!W.file.busy&&(W.file.readable||!!W.note.trim()));
     return false;}
+  if(s===6)return W.sourceType==='individual'||!!W.sourceTitle.trim();
   if(s===7)return !W.submitting;
   return true;}
 
@@ -88,29 +96,38 @@ function wzStep1(){
   const nameBit=!named?'':S.participantName
     ?`<div class="wz-name">Your name will show as <strong>${esc(S.participantName)}</strong>. <button type="button" class="raw-toggle" onclick="editDisplayName()">Change</button></div>`
     :`<div class="wz-name"><label for="display-name">Choose one name or handle to show on your contributions</label><input type="text" id="display-name" maxlength="80" placeholder="Your name or handle" value="${esc(S.displayName)}" oninput="wzNameInput()"></div>`;
-  const settings=`<div class="card wz-settings">${wzSwitch(W.anonymous,'Submit anonymously','Other participants will see your summary but not your name.','anon','wzToggle(\'anonymous\')')}
+  const sourceCards=`<h3 class="wz-label" id="wz-source-q">What are you contributing?</h3><div class="wz-cards three wz-source-types" role="group" aria-labelledby="wz-source-q">${wzModeCard(W.sourceType==='individual','user','My own thoughts','','wzSetSourceType(\'individual\')','source-individual')}${wzModeCard(W.sourceType==='transcript','messages','A conversation or transcript','','wzSetSourceType(\'transcript\')','source-transcript')}${wzModeCard(W.sourceType==='document','file-text','A document or paper','','wzSetSourceType(\'document\')','source-document')}</div>`;
+  const identitySettings=W.sourceType==='individual'?`<div class="card wz-settings">${wzSwitch(W.anonymous,'Submit anonymously','Other participants will see your summary but not your name.','anon','wzToggle(\'anonymous\')')}
       ${nameBit}
-      ${wzSwitch(W.isTest,'Test submission','Test submissions won’t be included in the final synthesis','test','wzToggle(\'isTest\')')}</div>`;
+      ${wzSwitch(W.isTest,'Test submission','Test submissions won’t be included in the final synthesis','test','wzToggle(\'isTest\')')}</div>`
+    :`<div class="card wz-settings">${wzSwitch(W.isTest,'Test source','This source won’t be included in synthesis','test','wzToggle(\'isTest\')')}</div><p class="wz-help">The uploader is recorded privately for stewardship. They are not treated as a speaker or author.</p>`;
   const mine=wzMine().length;
-  return `<p class="wz-eyebrow">Before you begin</p>${wzTitle('Share your thinking on how humans and AI should coexist — at Burning Man and beyond.')}
-    <p class="subtitle">You can submit with your name or anonymously, as many times as you like.</p>${settings}
+  return `<p class="wz-eyebrow">Before you begin</p>${wzTitle('Share your thinking on how humans and AI should coexist.')}
+    ${sourceCards}${identitySettings}
     <div class="wz-nav"><span>${mine?`<button type="button" class="raw-toggle" onclick="wzShowHistory()">Your past submissions (${mine})</button>`:''}</span>
     <button type="button" class="btn btn-amber" id="wz-start" onclick="wzNext()" ${wzValid(1)?'':'disabled'}>Get started →</button></div>`;}
 // Typing doesn't redraw the page, so re-check the current step's gate and enable/disable Next ourselves.
 function wzLiveGate(){wzSyncFields();const b=document.querySelector('.wz-nav .btn-amber');if(b&&W.step!==7)b.disabled=!wzValid(W.step);}
 function wzToggle(k){wzSyncFields();W[k]=!W[k];render();}
 function wzNameInput(){const e=document.getElementById('display-name');S.displayName=e.value;const b=document.getElementById('wz-start');if(b)b.disabled=!wzValid(1);}
+function wzSetSourceType(type){wzSyncFields();W.sourceType=type;if(type!=='individual')W.anonymous=true;render();}
 
 function wzModeCard(on,icon,title,sub,fn,fk){
   return `<button type="button" class="wz-card ${on?'selected':''}" aria-pressed="${on}" data-fk="${fk}" onclick="${fn}"><i class="ti ti-${icon}" aria-hidden="true"></i><span class="wz-card-title">${title}</span>${sub?`<span class="wz-card-sub">${sub}</span>`:''}</button>`;}
 
 function wzStep2(){
+  const own=W.sourceType==='individual';
+  const heading=own?'What topics matter most to you?':'What does this source address?';
+  const copy=own
+    ?'Before we show you what we’re working with, we’d like to hear from you. In your own words, what are the most important topics to address as humans and AI begin to coexist?'
+    :'Optionally add a little context to help map this source to the draft pillars. This is uploader context, not another speaker or author.';
+  const placeholder=own?'What principles, boundaries, or values matter most? What concerns you? What excites you?':'What should readers understand about this source?';
   const area=W.dMode==='text'
-    ?`<textarea id="discovery-text" rows="6" oninput="wzLiveGate()" placeholder="What principles, boundaries, or values matter most? What concerns you? What excites you?">${esc(W.dText)}</textarea><p class="wz-help">No limit — say what you need to say.</p>`
+    ?`<textarea id="discovery-text" rows="6" oninput="wzLiveGate()" placeholder="${placeholder}">${esc(W.dText)}</textarea><p class="wz-help">${own?'No limit — say what you need to say.':'Optional — you can leave this blank and choose pillars yourself.'}</p>`
     :W.dMode==='voice'?wzRecorder('d'):'';
-  return `<p class="wz-eyebrow">Step 2</p>${wzTitle('What topics matter most to you?')}
-    <p class="subtitle">Before we show you what we’re working with, we’d like to hear from you. In your own words, what are the most important topics to address as humans and AI begin to coexist?</p>
-    <p class="wz-help wz-help-spaced">These will become Pillars or themes. You will have the option to add in-depth ideas and upload documents on the next page.</p>
+  return `<p class="wz-eyebrow">Step 2</p>${wzTitle(heading)}
+    <p class="subtitle">${copy}</p>
+    <p class="wz-help wz-help-spaced">${own?'These will become Pillars or themes. You will have the option to add in-depth ideas and upload documents on the next page.':'Source context is never used to identify a real person.'}</p>
     <div class="wz-cards two">${wzModeCard(W.dMode==='text','pencil','Write it','','wzSetDMode(\'text\')','dm-text')}${wzModeCard(W.dMode==='voice','microphone','Say it','','wzSetDMode(\'voice\')','dm-voice')}</div>
     <div class="wz-inline">${area}</div>${wzNav({nextOk:wzValid(2)})}`;}
 function wzSetDMode(m){wzSyncFields();wzStopAllRec();W.dMode=m;render();}
@@ -122,14 +139,16 @@ async function wzEnsureMapping(){
   if(W.mapState==='loading'&&W.mapFor===text)return;
   const w=W,token=++w.mapToken;
   w.mapState='loading';w.mapFor=text;w.mapping=null;render();
-  const saved=wzSaveDiscovery().catch(e=>{console.error(e);showToast('Couldn’t save your topic notes yet — we’ll try again when you submit.');});
+  const saved=W.sourceType==='individual'
+    ?wzSaveDiscovery().catch(e=>{console.error(e);showToast('Couldn’t save your topic notes yet — we’ll try again when you submit.');})
+    :Promise.resolve();
   try{
     const r=await api('/api/map-pillars',{text});
     if(w!==W||token!==w.mapToken)return;
     w.mapping={matched:r.matched||[],newIdeas:r.newIdeas||[],reasoning:r.reasoning||''};
     w.mapState='done';w.choice='selected';w.pillars=new Set(w.mapping.matched);
     render();
-    await saved;wzSaveDiscovery().catch(e=>console.error(e));   // second write stores Claude's mapping next to the answer
+    await saved;if(W.sourceType==='individual')wzSaveDiscovery().catch(e=>console.error(e));   // second write stores Claude's mapping next to the answer
   }catch(e){
     console.error('Pillar mapping:',e);
     if(w!==W||token!==w.mapToken)return;
@@ -155,7 +174,8 @@ function wzTogglePillar(id){wzSyncFields();W.choice='selected';W.pillars.has(id)
 function wzChoose(k){wzSyncFields();if(W.choice===k)W.choice='selected';else{W.choice=k;W.pillars=new Set();}render();}
 
 function wzStep4(){
-  return `<p class="wz-eyebrow">Step 4</p>${wzTitle('How do you want to share?')}
+  const noun=W.sourceType==='transcript'?'the transcript':W.sourceType==='document'?'the document':'your thinking';
+  return `<p class="wz-eyebrow">Step 4</p>${wzTitle(`How do you want to add ${noun}?`)}
     <div class="wz-cards three">${wzModeCard(W.mode==='text','pencil','Write it','Type out your thoughts','wzSetMode(\'text\')','m-text')}${wzModeCard(W.mode==='voice','microphone','Say it','Record a voice note','wzSetMode(\'voice\')','m-voice')}${wzModeCard(W.mode==='upload','upload','Upload','Attach a file','wzSetMode(\'upload\')','m-upload')}</div>
     <p class="wz-help">Upload accepts: PDF, DOC, DOCX, PPT, PPTX, PNG, JPG, Google Docs, Google Slides</p>${wzNav({nextOk:wzValid(4)})}`;}
 function wzSetMode(m){W.mode=m;render();}
@@ -163,11 +183,13 @@ function wzSetMode(m){W.mode=m;render();}
 // ---- step 5: the contribution ----
 function wzStep5(){
   const hint=`<div class="wz-hint"><i class="ti ti-flask" aria-hidden="true"></i><span>You’re contributing to: <strong>${esc(wzPillarNames())}</strong></span></div>`;
+  const title=W.sourceType==='transcript'?'Add the transcript':W.sourceType==='document'?'Add the document':'Share your thinking';
+  const placeholder=W.sourceType==='transcript'?'Paste the transcript exactly as you have it. Speaker labels such as “Participant A:” will be detected without guessing real identities.':W.sourceType==='document'?'Paste the document text, or upload the original file.':'What principle, concern, or idea do you want to share about AI at Burning Man and beyond?';
   let input='';
-  if(W.mode==='text')input=`<textarea id="voice-text" rows="8" oninput="wzLiveGate()" placeholder="What principle, concern, or idea do you want to share about AI at Burning Man and beyond?">${esc(W.text)}</textarea><p class="wz-help">No limit — say what you need to say.</p>`;
+  if(W.mode==='text')input=`<textarea id="voice-text" rows="8" oninput="wzLiveGate()" placeholder="${placeholder}">${esc(W.text)}</textarea><p class="wz-help">${W.sourceType==='transcript'?'We keep the original transcript and link each detected speaker back to it.':'No limit — say what you need to say.'}</p>`;
   else if(W.mode==='voice')input=wzRecorder('r');
   else input=wzUploader();
-  return `<p class="wz-eyebrow">Step 5</p>${wzTitle('Share your thinking')}${hint}${input}${wzNav({nextOk:wzValid(5)})}`;}
+  return `<p class="wz-eyebrow">Step 5</p>${wzTitle(title)}${hint}${input}${wzNav({nextOk:wzValid(5)})}`;}
 
 // ---- voice recorder (steps 2 and 5) ----
 function wzRecorder(key){
@@ -281,6 +303,7 @@ async function wzPickFile(file){
   if(!WZ_FILE_TYPES[ext])return showToast('That file type isn’t supported — use PDF, DOC, DOCX, PPT, PPTX, PNG, JPG or GIF.');
   if(file.size>WZ_MAX_FILE)return showToast(file.name+' is too large (25 MB max).');
   const rec={name:file.name,size:file.size,ext,blob:file,busy:true,text:'',ai:null,readable:false,path:''};
+  if(W.sourceType!=='individual'&&!W.sourceTitle.trim())W.sourceTitle=file.name;
   W.file=rec;W.gdoc=null;render();
   try{Object.assign(rec,await readAttachment(file,ext));}catch(e){console.error(e);showToast('Could not read '+file.name+' — you can still add a note of your own.');}
   rec.busy=false;rec.readable=!!rec.text.trim()||!!rec.ai;
@@ -292,17 +315,23 @@ async function wzAddGoogle(){
   W.gdocBusy=true;render();
   try{const r=await api('/api/google-doc',{url});
     W.gdoc={name:(r.kind==='presentation'?'Slides: ':'Doc: ')+r.name,link:url,text:r.text};W.file=null;W.gdocUrl='';
+    if(W.sourceType!=='individual'&&!W.sourceTitle.trim())W.sourceTitle=r.name;
     document.getElementById('gdoc-url')?.remove();   // render() copies the box back into state, so drop the box too
   }catch(e){showToast(e.message||'Could not read that Google file');}
   W.gdocBusy=false;render();}
 
 // ---- step 6 ----
 function wzStep6(){
+  const sourceDetails=W.sourceType==='individual'?'':`<div class="wz-source-details">
+    <label class="wz-label" for="source-title">${W.sourceType==='transcript'?'Transcript':'Document'} title <span aria-hidden="true">*</span></label>
+    <input type="text" id="source-title" maxlength="255" value="${esc(W.sourceTitle)}" oninput="wzLiveGate()" placeholder="${W.sourceType==='transcript'?'e.g. Workshop transcript, Oct 1 2026':'e.g. Notes on humane AI'}">
+    ${W.sourceType==='document'?`<label class="wz-label" for="source-authors">Author name(s)</label><input type="text" id="source-authors" maxlength="600" value="${esc(W.sourceAuthors)}" oninput="wzLiveGate()" placeholder="One name per line, or separate with commas"><p class="wz-help">Only enter names stated in or supplied with the document. Matching an exact author name connects their documents; we do not infer identities from context.</p>`:`<p class="wz-help">Speaker labels are taken from the transcript where possible. We keep labels such as “Participant A” and never guess a real name.</p>`}
+  </div>`;
   return `<p class="wz-eyebrow">Step 6</p>${wzTitle('What kind of contribution is this?')}
     <p class="subtitle">Help us understand the nature of your input. This is free text — just a quick label. You can skip it.</p>
     <input type="text" id="contrib-type" maxlength="120" placeholder="e.g. concern / principle suggestion / story from playa / pilot idea / general observation / question" value="${esc(W.ctype)}" oninput="wzTypeInput(this)" aria-label="Type of contribution">
     <div class="wz-chips">${WZ_CHIPS.map(c=>`<button type="button" class="wz-chip" onclick="wzChip(this)">${c}</button>`).join('')}</div>
-    ${wzNav({next:W.ctype.trim()?'Next':'Skip'})}`;}
+    ${sourceDetails}${wzNav({next:W.ctype.trim()?'Next':'Skip',nextOk:wzValid(6)})}`;}
 function wzTypeInput(el){W.ctype=el.value;const nx=document.querySelector('.wz-nav .btn-amber');if(nx)nx.textContent=W.ctype.trim()?'Next':'Skip';}
 function wzChip(btn){const e=document.getElementById('contrib-type');if(e){e.value=btn.textContent;e.focus();wzTypeInput(e);}}
 
@@ -317,11 +346,13 @@ function wzStep7(){
   const fmt={text:'Written text',voice:'Voice recording',upload:'File upload'}[W.mode];
   const badges=[W.anonymous?'Anonymous':'',W.isTest?'Test submission':''].filter(Boolean);
   const who=!W.anonymous?`<p class="wz-help">Submitting as <strong>${esc(S.participantName||S.displayName)}</strong></p>`:'';
+  const sourceReview=W.sourceType==='individual'?'':wzReviewBlock('Source',`<p><strong>${esc(W.sourceType==='transcript'?'Transcript':'Document')}</strong> · ${esc(W.sourceTitle.trim())}</p>${W.sourceType==='document'&&W.sourceAuthors.trim()?`<p class="wz-help">Authors: ${esc(W.sourceAuthors.trim())}</p>`:''}`,6);
   return `<p class="wz-eyebrow">Step 7</p>${wzTitle('Review and submit')}
     ${wzReviewBlock('Pillars',`<p>${esc(wzPillarNames())}</p>`,3)}
     ${wzReviewBlock('Format',`<p>${fmt}</p>`,4)}
     ${wzReviewBlock('Your submission',wzPreview(),5)}
     ${wzReviewBlock('Type of contribution',`<p>${W.ctype.trim()?esc(W.ctype.trim()):'<span class="wz-help">Not specified</span>'}</p>`,6)}
+    ${sourceReview}
     ${badges.length?`<div class="wz-badges">${badges.map(b=>`<span class="wz-badge solid">${b}</span>`).join('')}</div>`:''}${who}
     ${W.submitting?'<div class="loading" role="status"><div class="spinner"></div>Saving your voice…</div>'
       :`<div class="wz-nav"><button type="button" class="btn-ghost" onclick="wzBack()">← Back</button><button type="button" class="btn btn-amber" onclick="wzNext()">✓ Submit</button></div>`}`;}
@@ -335,7 +366,7 @@ async function wzUpload(label,blob,type,ext){
 function wzSaveDiscovery(){   // serialised, so the second write (with the AI mapping) always updates the first row
   const w=W;
   return w.dChain=w.dChain.catch(()=>{}).then(async()=>{
-    if(!S.session)return;
+    if(!S.session||w.sourceType!=='individual')return;
     const text=wzDiscoveryText();if(!text)return;
     const voice=w.dMode==='voice';let audio=null;
     if(voice&&w.dRec.blob)audio=w.dRec.path||(w.dRec.path=await wzUpload('discovery',w.dRec.blob,w.dRec.mime,WZ_AUDIO_EXT[w.dRec.mime]||'webm'));
@@ -343,39 +374,76 @@ function wzSaveDiscovery(){   // serialised, so the second write (with the AI ma
       p_ai_mapping:w.mapState==='done'&&w.mapFor===text?w.mapping:null,p_is_anonymous:w.anonymous,p_is_test:w.isTest});
     if(error)throw error;w.dId=data;});}
 function wzBuild(){
-  if(W.mode==='text')return{content:W.text.trim(),attachments:[]};
-  if(W.mode==='voice')return{content:W.rec.transcript.trim(),attachments:[]};
-  const parts=[W.note.trim()],f=W.file;
-  if(W.gdoc)parts.push(`[From: ${W.gdoc.name}]\n${W.gdoc.text}`);
-  else if(f.text.trim())parts.push(`[From: ${f.name}]\n${f.text.trim()}`);
-  else parts.push(/^(png|jpe?g|gif)$/.test(f.ext)?`[Attached image: ${f.name}]`:`[Attached file: ${f.name}]`);
-  return{content:parts.filter(Boolean).join('\n\n'),attachments:f?.ai?[{name:f.name,mediaType:f.ai.mediaType,data:f.ai.data}]:[]};}
+  if(W.mode==='text'){const text=W.text.trim();return{rawContent:text,analysisContent:text,attachments:[]};}
+  if(W.mode==='voice'){const text=W.rec.transcript.trim();return{rawContent:text,analysisContent:text,attachments:[]};}
+  const f=W.file;
+  const rawContent=W.gdoc?W.gdoc.text.trim():f.text.trim()||(/^(png|jpe?g|gif)$/.test(f.ext)?`[Attached image: ${f.name}]`:`[Attached file: ${f.name}]`);
+  const named=`[From: ${W.gdoc?W.gdoc.name:f.name}]\n${rawContent}`;
+  return{rawContent,analysisContent:[W.note.trim(),named].filter(Boolean).join('\n\n'),attachments:f?.ai?[{name:f.name,mediaType:f.ai.mediaType,data:f.ai.data}]:[]};}
+
+// This intentionally uses only source formatting, never an AI guess. A label
+// such as "Participant A:" remains exactly that label; no real name is inferred.
+function wzTranscriptSpeakers(raw){
+  const voices=[],byKey=new Map();let current=null,detected=false;
+  const add=(label,text,isDetected)=>{
+    const clean=label.replace(/\s+/g,' ').trim(),key=clean.toLocaleLowerCase();
+    let voice=byKey.get(key);if(!voice){voice={label:clean,content:'',detected:isDetected};byKey.set(key,voice);voices.push(voice);}
+    voice.detected=voice.detected||isDetected;voice.content+=(voice.content?'\n':'')+text.trim();current=voice;
+  };
+  for(const line of String(raw||'').split(/\r?\n/)){
+    const m=/^\s*(?:\[([^\]\r\n]{1,120})\]|([A-Za-z][A-Za-z0-9 .,'’_-]{0,118}))\s*[:—–-]\s*(\S[\s\S]*)$/.exec(line);
+    const label=(m?.[1]||m?.[2]||'').trim();
+    if(m&&label&&!/^note$/i.test(label)){add(label,m[3],true);detected=true;}
+    else if(current)current.content+=(current.content?'\n':'')+line;
+    else add('Unlabeled transcript',line,false);
+  }
+  const usable=voices.map(v=>({...v,content:v.content.trim()})).filter(v=>v.content);
+  if(!detected)return[{label:'Unlabeled transcript',content:String(raw||'').trim(),detected:false}];
+  return usable.length?usable:[{label:'Unlabeled transcript',content:String(raw||'').trim(),detected:false}];
+}
+function wzDocumentAuthors(){
+  const seen=new Set();
+  return W.sourceAuthors.split(/[\n,;]/).map(x=>x.replace(/\s+/g,' ').trim()).filter(x=>{
+    const key=x.toLocaleLowerCase();if(!x||seen.has(key))return false;seen.add(key);return true;
+  });
+}
+async function wzAnalyze(content,attachments=[]){
+  const selected=W.choice==='selected'?[...W.pillars].sort((a,b)=>a-b):[];
+  let pillars=selected,autoTagged=false,summary='';
+  try{
+    const r=await api('/api/summarize',{text:content,selectedPillars:selected,noTag:W.choice==='something_else',contributionType:W.ctype.trim(),attachments});
+    if(r.attachmentsSkipped)showToast('Image analysis unavailable — analyzed text only');
+    if(Array.isArray(r.pillars)&&r.pillars.length){pillars=r.pillars;autoTagged=!!r.autoTagged;}
+    if(r.summary)summary=r.summary;
+  }catch(e){console.error('AI processing:',e);showToast('AI analysis: '+(e.message||'error'));}
+  if(!summary)summary=content.slice(0,200)+(content.length>200?'…':'');
+  return{content,pillars,summary,auto_tagged:autoTagged,pillar_choice:W.choice};
+}
 async function wzSubmit(){
   if(W.submitting||!wzValid(7))return;
   if(!S.session)return alert('Verify your email before contributing.');
-  const {content,attachments}=wzBuild();
-  if(!content)return alert('Please add your contribution first.');
-  if(content.length>MAX_CONTENT_CHARS)return alert('That is too long ('+content.length.toLocaleString()+' characters). The limit is '+MAX_CONTENT_CHARS.toLocaleString()+'. Try trimming it.');
+  const {rawContent,analysisContent,attachments}=wzBuild();
+  if(!rawContent||!analysisContent)return alert('Please add your contribution first.');
+  if(rawContent.length>MAX_CONTENT_CHARS||analysisContent.length>MAX_CONTENT_CHARS)return alert('That is too long. The limit is '+MAX_CONTENT_CHARS.toLocaleString()+' characters. Try trimming it.');
   const w=W;w.submitting=true;render();
   try{
     let audioPath=null,filePath=null;const fileName=(w.mode==='upload'?(w.gdoc||w.file).name:null);
     if(w.mode==='voice'&&w.rec.blob)audioPath=w.rec.path||(w.rec.path=await wzUpload('submission',w.rec.blob,w.rec.mime,WZ_AUDIO_EXT[w.rec.mime]||'webm'));
     if(w.mode==='upload'&&w.file)filePath=w.file.path||(w.file.path=await wzUpload('file',w.file.blob,WZ_FILE_TYPES[w.file.ext],w.file.ext));
     if(w.mode==='upload'&&w.gdoc)filePath=w.gdoc.link;
-    await wzSaveDiscovery().catch(e=>console.error('Discovery save:',e));   // retry; never blocks the submission
-    const selected=w.choice==='selected'?[...w.pillars].sort((a,b)=>a-b):[];
-    let pillars=selected,autoTagged=false,summary='';
-    try{   // one server call: summarize + (for "not sure yet") auto-pick pillars. The Anthropic key stays on the server.
-      const r=await api('/api/summarize',{text:content,selectedPillars:selected,noTag:w.choice==='something_else',contributionType:w.ctype.trim(),attachments});
-      if(r.attachmentsSkipped)showToast('Image analysis unavailable — analyzed text only');
-      if(Array.isArray(r.pillars)&&r.pillars.length){pillars=r.pillars;autoTagged=!!r.autoTagged;}
-      if(r.summary)summary=r.summary;
-    }catch(e){console.error('AI processing:',e);showToast('AI analysis: '+(e.message||'error'));}
-    if(!summary)summary=content.slice(0,200)+(content.length>200?'…':'');
+    if(w.sourceType==='individual')await wzSaveDiscovery().catch(e=>console.error('Discovery save:',e));   // retry; never blocks the submission
+    const speakers=w.sourceType==='transcript'?wzTranscriptSpeakers(rawContent):null;
+    const authors=w.sourceType==='document'?wzDocumentAuthors():[];
+    const analyzed=speakers
+      ?await Promise.all(speakers.map(v=>wzAnalyze(v.content)))
+      :[await wzAnalyze(analysisContent,attachments)];
+    const contributions=analyzed.map((a,i)=>({...a,labels:speakers?[speakers[i].label]:(w.sourceType==='document'?authors:[])}));
     const wasTest=w.isTest;
-    if(!w.anonymous&&!S.participantName)await saveParticipantName(S.displayName);
-    const {error}=await sb.rpc('submit_submission',{p_pillars:pillars,p_content:content,p_summary:summary,p_auto_tagged:autoTagged,p_is_test:w.isTest,p_anonymous:w.anonymous,
-      p_contribution_type:w.ctype.trim()||null,p_input_mode:w.mode,p_pillar_choice:w.choice,p_audio_url:audioPath,p_file_url:filePath,p_file_name:fileName,p_discovery_input_id:w.dId});
+    if(w.sourceType==='individual'&&!w.anonymous&&!S.participantName)await saveParticipantName(S.displayName);
+    const contributors=speakers?speakers.map(v=>({label:v.label,detected:v.detected})):authors.map(label=>({label}));
+    const {error}=await sb.rpc('submit_source',{p_source_type:w.sourceType,p_source_title:w.sourceTitle.trim()||(w.sourceType==='individual'?'Individual contribution':''),p_raw_content:rawContent,
+      p_source_created_at:null,p_audio_url:audioPath,p_file_url:filePath,p_file_name:fileName,p_input_mode:w.mode,p_contributors:contributors,p_contributions:contributions,
+      p_is_test:w.isTest,p_anonymous:w.anonymous,p_discovery_input_id:w.sourceType==='individual'?w.dId:null,p_contribution_type:w.ctype.trim()||null});
     if(error)throw error;
     wzReset();W.step=8;W.confirmed=true;W.focusTitle=true;
     S.displayName=S.participantName;

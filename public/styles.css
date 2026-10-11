@@ -248,20 +248,22 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 :root[data-theme="dark"]{--syn-bg:#0f0f11;--syn-surface:#1a1a1f;--syn-fg:#e8e6e1;--syn-muted:#9d9a93;--syn-line:#2c2c33;--syn-commons:#4aba7a;--syn-contested:#e8a948;--syn-gaps:#6b8aed}
 .syn{font-family:'DM Sans',var(--font);color:var(--syn-fg)}
 .syn button{font-family:inherit;color:inherit}
-.syn-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:16px}
-.syn-stat{background:var(--syn-surface);border:1px solid var(--syn-line);border-radius:10px;padding:9px 3px 8px;text-align:center}
-.syn-stat .ti{font-size:17px}
-.syn-num{font-family:'Space Mono',monospace;font-size:17px;font-weight:700;line-height:1.2;margin-top:2px}
-.syn-slabel{font-size:10px;line-height:1.2;color:var(--syn-muted);margin-top:2px}
-.syn-sec{--c:var(--syn-commons);background:var(--syn-surface);border:1px solid var(--syn-line);border-left:3px solid var(--c);border-radius:var(--radius);margin-bottom:12px}
+.syn-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:22px}
+.syn-stat{background:var(--syn-surface);border:1px solid var(--syn-line);border-radius:12px;padding:12px 12px 10px}
+.syn-stat .ti{font-size:15px;flex-shrink:0}
+.syn-num{font-size:26px;font-weight:700;line-height:1.1;margin-top:8px}
+.syn-of{font-size:14px;font-weight:500;color:var(--syn-muted)}
+.syn-slabel{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.2;color:var(--syn-muted)}
+.syn-sec{--c:var(--syn-commons);background:var(--syn-surface);border:1px solid var(--syn-line);border-radius:12px;margin-bottom:12px}
 .syn-sec.contested{--c:var(--syn-contested)}.syn-sec.gaps{--c:var(--syn-gaps)}
 .syn-shead,.syn-phead{display:flex;align-items:center;gap:10px;width:100%;background:0;border:0;text-align:left;cursor:pointer}
-.syn-shead{padding:14px 14px 14px 10px}
+.syn-shead{gap:14px;padding:16px 16px 16px 18px}
 .syn-tag{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 9px;border-radius:5px;color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent);white-space:nowrap}
-.syn-stitle{font-size:15px;font-weight:600;flex:1;min-width:0}
-.syn-scount{font-family:'Space Mono',monospace;font-size:12px;color:var(--syn-muted)}
+.syn-stitle{font-size:17px;font-weight:700;flex:1;min-width:0}
+.syn-scount{font-size:14px;color:var(--syn-muted)}
 .acc-chev.rot{display:inline-block;width:20px;text-align:center;font-size:19px;line-height:1;color:var(--syn-muted);transition:transform .25s ease;flex-shrink:0}
-.acc.open>.syn-shead .rot,.acc.open>.syn-prow .rot{transform:rotate(90deg)}
+.syn-shead .acc-chev.rot{font-size:17px}
+.acc.open>.syn-shead .rot{transform:rotate(180deg)}.acc.open>.syn-prow .rot{transform:rotate(90deg)}
 .syn-rows{padding:0 10px 10px}
 .syn-pillar{border-top:1px solid var(--syn-line);margin-bottom:0}
 .syn-prow{position:relative}
@@ -295,5 +297,31 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 @media(hover:hover){.dot:hover>.sugg-who,.dot:focus-visible>.sugg-who{display:block}}
 .spec-poles{display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-family:'Space Mono',monospace;font-size:11px;color:var(--syn-muted)}
 .spec-poles span:last-child{text-align:right}
-@media(max-width:420px){.syn-meter{width:38px}.syn-phead{padding-right:52px}.syn-stat{padding:8px 1px}.syn-num{font-size:15px}.syn-slabel{font-size:9px}.syn-tag{font-size:10px;padding:3px 7px}}
+@media(max-width:600px){.syn-stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:420px){.syn-meter{width:38px}.syn-phead{padding-right:52px}.syn-stat{padding:10px 9px 8px}.syn-num{font-size:22px}.syn-slabel{font-size:11px}.syn-tag{font-size:10px;padding:3px 7px}.syn-shead{gap:10px;padding:14px 12px 14px 14px}.syn-stitle{font-size:15px}}
 @media(prefers-reduced-motion:reduce){.acc-chev.rot{transition:none}}
+/* Synthesis page: header with version picker, footer with pending status + create button */
+.syn-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px 24px;flex-wrap:wrap;margin-bottom:22px}
+.syn-titles{min-width:0}
+.syn-eyebrow{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.syn-page h2{font-size:32px;font-weight:700;letter-spacing:-1px;line-height:1.1;margin-bottom:10px}
+.syn-meta{font-size:15px;color:var(--syn-muted)}
+.syn-meta strong{color:var(--syn-fg);font-weight:600}
+.syn-sep{margin:0 8px;opacity:.5}
+.syn-versions{display:flex;flex-direction:column;gap:6px;min-width:220px}
+.syn-versions label{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--syn-muted)}
+.syn-select{position:relative}
+.syn-select select{width:100%;appearance:none;-webkit-appearance:none;font-family:inherit;font-size:15px;padding:10px 38px 10px 14px;border:1px solid var(--syn-line);border-radius:10px;background:var(--syn-surface);color:var(--syn-fg);cursor:pointer}
+.syn-select .ti{position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--syn-muted)}
+.syn-status{display:flex;align-items:baseline;gap:10px;font-size:14px;color:var(--syn-muted);margin:0}
+.syn-status strong{color:var(--syn-fg)}
+.syn-status.older{display:block;margin:-10px 0 18px}
+.syn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--syn-commons);transform:translateY(-1px)}
+.syn-status.pending .syn-dot{background:var(--accent)}
+.syn-foot{display:flex;justify-content:space-between;align-items:center;gap:14px 20px;flex-wrap:wrap;border-top:1px solid var(--syn-line);margin-top:24px;padding-top:22px}
+.syn-foot-l{display:flex;flex-direction:column;gap:10px;min-width:0;flex:1 1 260px}
+.syn-foot-r{margin-left:auto}
+.syn-create{display:inline-flex;align-items:center;gap:8px;font-weight:700;width:auto;background:var(--accent);color:#1a1208}
+.syn-run-note{font-size:13px;color:var(--syn-muted)}
+@media(max-width:600px){.syn-versions{width:100%}.syn-page h2{font-size:28px}.syn-foot-r,.syn-create{width:100%;justify-content:center}}
+.wz-source-types{margin-bottom:16px}

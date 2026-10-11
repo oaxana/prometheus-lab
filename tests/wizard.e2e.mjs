@@ -25,8 +25,8 @@ const p = await mk(); watch(p, ['status of 502', 'Pillar mapping:']);   // the m
 await verify(p, 'wiz@example.com');
 
 // ---------------- Step 1
-check('step 1 headline', (await p.locator('.wz-title').innerText()).startsWith('Share your thinking on how humans and AI should coexist — at Burning Man and beyond.'));
-check('step 1 says you can submit as many times as you like', (await p.locator('.subtitle').innerText()).includes('with your name or anonymously, as many times as you like'));
+check('step 1 headline', (await p.locator('.wz-title').innerText()).startsWith('Share your thinking on how humans and AI should coexist.'));
+check('step 1 asks "What are you contributing?" with three source types, "My own thoughts" selected', (await p.locator('#wz-source-q').innerText()) === 'What are you contributing?' && (await p.locator('.wz-source-types .wz-card').allInnerTexts()).map((t) => t.trim()).join('|') === 'My own thoughts|A conversation or transcript|A document or paper' && (await p.locator('[data-fk=source-individual]').getAttribute('aria-pressed')) === 'true');
 check('stepper has 8 steps, first is active', (await p.locator('.wz-stepper li').count()) === 8 && (await p.locator('.wz-stepper li.active').count()) === 1 && (await step(p)) === 1);
 check('no Back button on step 1', (await p.locator('.wz-nav .btn-ghost:has-text("Back")').count()) === 0);
 check('test helper text is shown', (await p.locator('.wz-help:has-text("Test submissions won’t be included in the final synthesis")').count()) === 1);
@@ -93,7 +93,7 @@ check('edited text re-maps and updates the same discovery row', mapCalls.length 
 await p.unroute('**/api/map-pillars');
 
 // ---------------- Step 4
-await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("How do you want to share?")');
+await p.click(NEXT); await p.waitForSelector('.wz-title:has-text("How do you want to add your thinking?")');
 check('step 4: three cards, Tabler icons (no emoji)', (await p.locator('.wz-cards .wz-card').count()) === 3 && (await p.locator('.wz-card .ti-pencil, .wz-card .ti-microphone, .wz-card .ti-upload').count()) === 3);
 check('step 4: card captions', (await p.locator('.wz-cards').innerText()).includes('Type out your thoughts') && (await p.locator('.wz-cards').innerText()).includes('Record a voice note') && (await p.locator('.wz-cards').innerText()).includes('Attach a file'));
 check('step 4: supported formats listed', (await p.locator('main').innerText()).includes('PDF, DOC, DOCX, PPT, PPTX, PNG, JPG, Google Docs, Google Slides'));

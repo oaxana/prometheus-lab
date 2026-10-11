@@ -1,7 +1,14 @@
+// GET  /api/synthesize?includeTests=1   (any crew member)
+//   Status only: how many eligible contributions/voices exist and how many are not yet in
+//   the latest synthesis version. Returns integers, never ids or names.
 // POST /api/synthesize   (project lead only — requires the admin session cookie from /api/admin)
-// Body:    { includeTests?: boolean }
-// Reads every submission from Supabase (service-role key), asks Claude for the
-// commons / contested / gaps synthesis, stores it in the `synthesis` table, and returns it.
+//   Body: { includeTests?: boolean }
+//   If nothing changed since the latest version, returns that version without calling Claude.
+//   Otherwise reads ALL eligible submissions (service-role key), asks Claude for the
+//   commons / contested / gaps synthesis, and saves it as a new immutable row in
+//   `synthesis_versions` (mirrored to the old single-row `synthesis` table).
+//   Each version is made from the full underlying material, never from an earlier synthesis,
+//   so minority points can't be summarised away over successive runs.
 import { createClient } from '@supabase/supabase-js';
 import { MODEL, PILLAR_LIST, pillarName, HttpError, anthropic, send, readJson, parseJsonResponse, fail, requireAdmin } from './_shared.js';
 
@@ -113,17 +120,21 @@ const pct = (v, fallback) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Mat
 function clean(out, sources) {
   const known = new Map(sources.map((s) => [s.label, s]));
   const labels = [...known.keys()];
-  // Distinct people behind a list of source labels (person key -> the source to show them as).
+  // Distinct people behind a list of source labels (person key -> representative
+  // public identity). A source can name several people when a document is
+  // co-authored; one transcript speaker is source-local unless confirmed later.
   const peopleMap = (list) => {
     const people = new Map();
     for (const label of [...new Set((Array.isArray(list) ? list : []).map(str))]) {
       const source = known.get(label);
       if (!source) continue;
-      const current = people.get(source.personKey);
-      // If the same person supported a point both publicly and anonymously, the named
-      // contribution is enough to attribute that person by name without exposing the
-      // anonymous-only contribution.
-      if (!current || (!current.name && source.name)) people.set(source.personKey, source);
+      for (const person of source.people) {
+        const current = people.get(person.key);
+        // If the same person supported a point both publicly and anonymously, the named
+        // contribution is enough to attribute that person by name without exposing the
+        // anonymous-only contribution.
+        if (!current || (!current.name && person.name)) people.set(person.key, person);
+      }
     }
     return people;
   };
@@ -200,51 +211,161 @@ function clean(out, sources) {
   return { commons, contested, gaps };
 }
 
+// Everything eligible for a synthesis, grouped into run-local sources and distinct people.
+// Used both for the status check and for a real run, so both count voices the same way.
+async function gather(db, includeTests, withContent = true) {
+  const { data: rows, error } = await db
+    .from('submissions')
+    .select(`id, pillars, pillar_choice, ${withContent ? 'content, summary, ' : ''}is_test, created_at, display_name, participant_id, uid, source_id`)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
+  const voices = rows.filter((r) => includeTests || !r.is_test);
+
+  // Source-model rows need their contributor links. This extra read is skipped for
+  // legacy rows, preserving the old data path and its privacy behavior.
+  const sourceIds = [...new Set(voices.map((r) => r.source_id).filter(Boolean))];
+  const linksBySubmission = new Map();
+  const contributorsBySource = new Map();
+  const sourcesById = new Map();
+  if (sourceIds.length) {
+    const submissionIds = voices.filter((r) => r.source_id).map((r) => r.id);
+    const [linksResult, sourcesResult] = await Promise.all([
+      db.from('submission_contributors')
+        .select('submission_id, source_contributors(id, source_id, source_label, contributor_id, contributors(id, participant_id, display_name))')
+        .in('submission_id', submissionIds),
+      db.from('sources').select('id, source_type').in('id', sourceIds),
+    ]);
+    if (linksResult.error || sourcesResult.error) throw new HttpError(500, 'Could not read source contributor links from Supabase.');
+    for (const link of linksResult.data ?? []) {
+      if (!linksBySubmission.has(link.submission_id)) linksBySubmission.set(link.submission_id, []);
+      linksBySubmission.get(link.submission_id).push(link.source_contributors);
+      const sc = link.source_contributors;
+      if (sc?.source_id) {
+        if (!contributorsBySource.has(sc.source_id)) contributorsBySource.set(sc.source_id, new Map());
+        contributorsBySource.get(sc.source_id).set(sc.id, sc);
+      }
+    }
+    for (const source of sourcesResult.data ?? []) sourcesById.set(source.id, source);
+  }
+
+  // Group real submissions by their actual contributors internally, then replace
+  // those keys with run-local labels. For old rows, retain the existing Auth/uid
+  // fallback. The uploader of a transcript/document is deliberately not used.
+  const personKeys = [];
+  const personIndex = new Map();
+  const registerPerson = (key) => {
+    if (!personIndex.has(key)) { personIndex.set(key, personKeys.length); personKeys.push(key); }
+    return key;
+  };
+  const legacyPerson = (r, i) => registerPerson(r.participant_id ? `auth:${r.participant_id}` : r.uid ? `legacy:${r.uid}` : `row:${r.id ?? i}`);
+
+  const sourceIndex = new Map();
+  const sources = [];
+  const sourceOf = (r, i) => {
+    const sourceType = r.source_id ? (sourcesById.get(r.source_id)?.source_type || 'source') : null;
+    // A transcript has one derived contribution per speaker, so each speaker
+    // needs its own model-facing source label. A document remains one source
+    // and can deliberately have several author contributors.
+    const contributorLinks = r.source_id
+      ? (sourceType === 'transcript'
+        ? (linksBySubmission.get(r.id) ?? []).filter(Boolean)
+        : [...(contributorsBySource.get(r.source_id)?.values() ?? [])])
+      : [];
+    if (r.source_id && contributorLinks.length) {
+      const sourceKey = sourceType === 'transcript' ? `source:${r.source_id}:submission:${r.id}` : `source:${r.source_id}`;
+      if (!sourceIndex.has(sourceKey)) {
+        const people = contributorLinks.map((sc) => {
+          const c = sc.contributors;
+          if (c?.participant_id) return { key: registerPerson(`auth:${c.participant_id}`), name: (r.display_name ?? c.display_name ?? '').replace(/["<>]/g, '').trim().slice(0, 80) };
+          if (c?.id) return { key: registerPerson(`contributor:${c.id}`), name: (c.display_name ?? '').replace(/["<>]/g, '').trim().slice(0, 120) };
+          return { key: registerPerson(`source-contributor:${sc.id}`), name: (sc.source_label ?? '').replace(/["<>]/g, '').trim().slice(0, 120) };
+        });
+        const label = `Source ${sources.length + 1} (${sourceType})`;
+        sourceIndex.set(sourceKey, sources.length);
+        sources.push({ label, people });
+      }
+      return sources[sourceIndex.get(sourceKey)];
+    }
+    const personKey = legacyPerson(r, i);
+    const name = (r.display_name ?? '').replace(/["<>]/g, '').trim().slice(0, 80);
+    const visibilityKey = `${personKey}|${name ? `named:${name}` : 'anonymous'}`;
+    if (!sourceIndex.has(visibilityKey)) {
+      const base = labelFor(personIndex.get(personKey));
+      const label = `${base} source ${sources.filter((s) => s.people.some((p) => p.key === personKey)).length + 1} (${name ? 'named' : 'anonymous'})`;
+      sourceIndex.set(visibilityKey, sources.length);
+      sources.push({ label, people: [{ key: personKey, name }] });
+    }
+    return sources[sourceIndex.get(visibilityKey)];
+  };
+  const rowSources = voices.map(sourceOf);
+
+  return { voices, sources, rowSources, personKeys, personIndex };
+}
+
+const VERSION_COLUMNS = 'version, created_at, commons, contested, gaps, voice_count, contribution_count, source_count, included_tests, provenance';
+
+// The newest saved version with its private provenance (or null when there is no history yet).
+async function latestVersion(db, full) {
+  const { data, error } = await db
+    .from('synthesis_versions')
+    .select(full ? `${VERSION_COLUMNS}, submission_ids, voice_keys` : 'version, submission_ids, voice_keys')
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new HttpError(500, 'Could not read synthesis history from Supabase (has the latest supabase-setup.sql been run?).');
+  return data;
+}
+
+// What is eligible now compared with what the latest version included. Voices are the
+// internal person keys from gather(); only the counts ever leave the server.
+function pendingOf({ voices, rowSources }, latest) {
+  const included = new Set(latest?.submission_ids ?? []);
+  const known = new Set(latest?.voice_keys ?? []);
+  const current = new Set(voices.map((r) => r.id));
+  const fresh = rowSources.filter((_, i) => !included.has(voices[i].id));
+  const people = new Set(fresh.flatMap((s) => s.people.map((p) => p.key)));
+  const removed = [...included].filter((id) => !current.has(id)).length;
+  return {
+    contributions: fresh.length,
+    voices: people.size, // distinct voices behind the new contributions
+    newVoices: [...people].filter((k) => !known.has(k)).length, // of those, voices not in the latest version at all
+    removed, // included before, but since deleted or marked as test
+    changed: fresh.length > 0 || removed > 0,
+  };
+}
+
+const sourceCountOf = (voices) => new Set(voices.map((r) => r.source_id || `row:${r.id}`)).size;
+
+const versionResponse = (v) => ({
+  version: v.version,
+  commons: v.commons,
+  contested: v.contested,
+  gaps: v.gaps,
+  timestamp: Date.parse(v.created_at),
+  count: v.voice_count,
+  submissionCount: v.contribution_count,
+  sourceCount: v.source_count,
+  includedTests: v.included_tests,
+});
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
+  if (req.method === 'GET') return status(req, res);
+  if (req.method !== 'POST') return send(res, 405, { error: 'Use GET or POST.' });
   try {
     requireAdmin(req);
     const includeTests = readJson(req).includeTests === true;
 
     const db = supabase();
-    const { data: rows, error } = await db
-      .from('submissions')
-      .select('id, pillars, pillar_choice, content, summary, is_test, created_at, display_name, participant_id, uid')
-      .order('created_at', { ascending: true })
-      .limit(1000);
-    if (error) throw new HttpError(500, 'Could not read submissions from Supabase.');
-    const voices = rows.filter((r) => includeTests || !r.is_test);
+    const { voices, sources, rowSources, personKeys, personIndex } = await gather(db, includeTests);
     if (!voices.length) throw new HttpError(400, 'No submissions to analyze.');
 
-    // Group real submissions by the stable owner internally, but replace that owner with
-    // a run-local Participant A/B/C label. Legacy rows can still be grouped by their old uid;
-    // neither kind of identifier is sent to Claude.
-    const personKeys = [];
-    const personIndex = new Map();
-    const keyOf = (r, i) => r.participant_id ? `auth:${r.participant_id}` : r.uid ? `legacy:${r.uid}` : `row:${r.id ?? i}`;
-    voices.forEach((r, i) => {
-      const key = keyOf(r, i);
-      if (!personIndex.has(key)) {
-        personIndex.set(key, personKeys.length);
-        personKeys.push(key);
-      }
-    });
-
-    const sourceIndex = new Map();
-    const sources = [];
-    const sourceOf = (r, i) => {
-      const personKey = keyOf(r, i);
-      const name = (r.display_name ?? '').replace(/["<>]/g, '').trim().slice(0, 80);
-      const visibilityKey = `${personKey}|${name ? `named:${name}` : 'anonymous'}`;
-      if (!sourceIndex.has(visibilityKey)) {
-        const base = labelFor(personIndex.get(personKey));
-        const label = `${base} source ${sources.filter((s) => s.personKey === personKey).length + 1} (${name ? 'named' : 'anonymous'})`;
-        sourceIndex.set(visibilityKey, sources.length);
-        sources.push({ label, personKey, name });
-      }
-      return sources[sourceIndex.get(visibilityKey)];
-    };
-    const rowSources = voices.map(sourceOf);
+    // No new (or removed) eligible material since the latest version: return it, don't call Claude.
+    const latest = await latestVersion(db, true);
+    const pending = pendingOf({ voices, rowSources }, latest);
+    if (latest && !pending.changed) {
+      return send(res, 200, { ...versionResponse(latest), unchanged: true, pending });
+    }
 
     const body = voices
       .map((s, i) => {
@@ -252,7 +373,8 @@ export default async function handler(req, res) {
           ? 'none (the author says this fits no draft pillar)'
           : (s.pillars ?? []).map((id) => pillarName(id) ?? id).join(', ');
         const source = rowSources[i];
-        return `<contribution n="${i + 1}" participant="${labelFor(personIndex.get(source.personKey))}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
+        const participants = source.people.map((p) => labelFor(personIndex.get(p.key))).join(' | ');
+        return `<contribution n="${i + 1}" participant="${participants}" source="${source.label}" pillars="${names}">\n${(s.content ?? '').slice(0, MAX_VOICE_CHARS)}\n</contribution>`;
       })
       .join('\n\n');
 
@@ -290,22 +412,52 @@ Rules:
 
     const result = clean(parseJsonResponse(msg), sources);
 
-    const { error: saveError } = await db.from('synthesis').upsert({
-      id: 1,
-      ...result,
-      count: personKeys.length,
-      submission_count: voices.length,
-      included_tests: includeTests,
+    // A new immutable version. Its number comes from the latest version read above, so if
+    // two runs overlap the second insert hits the primary key instead of overwriting.
+    const saved = {
+      version: (latest?.version ?? 0) + 1,
       created_at: new Date().toISOString(),
-    });
+      ...result,
+      voice_count: personKeys.length,
+      contribution_count: voices.length,
+      source_count: sourceCountOf(voices),
+      included_tests: includeTests,
+      provenance: 'exact',
+      submission_ids: voices.map((r) => r.id),
+      voice_keys: personKeys,
+    };
+    const { error: saveError } = await db.from('synthesis_versions').insert(saved);
+    if (saveError?.code === '23505') throw new HttpError(409, 'Another synthesis was saved while this one was running. Reload to see it.');
     if (saveError) throw new HttpError(500, 'Synthesis ran but could not be saved to Supabase.');
 
-    return send(res, 200, {
+    // Mirror into the old single-row table for any frontend that still reads it. Best effort:
+    // the version above is the record.
+    const { error: mirrorError } = await db.from('synthesis').upsert({
+      id: 1,
       ...result,
-      timestamp: Date.now(),
-      count: personKeys.length,
-      submissionCount: voices.length,
-      includedTests: includeTests,
+      count: saved.voice_count,
+      submission_count: saved.contribution_count,
+      included_tests: includeTests,
+      created_at: saved.created_at,
+    });
+    if (mirrorError) console.error('Synthesis mirror:', mirrorError.message);
+
+    return send(res, 200, { ...versionResponse(saved), unchanged: false, pending: pendingOf({ voices, rowSources }, saved) });
+  } catch (err) {
+    return fail(res, err);
+  }
+}
+
+// GET: pending-material status for the Synthesis page. Counts only.
+async function status(req, res) {
+  try {
+    const includeTests = new URL(req.url ?? '/', 'http://localhost').searchParams.get('includeTests') === '1';
+    const db = supabase();
+    const [{ voices, rowSources, personKeys }, latest] = await Promise.all([gather(db, includeTests, false), latestVersion(db, false)]);
+    return send(res, 200, {
+      latestVersion: latest?.version ?? null,
+      eligible: { contributions: voices.length, voices: personKeys.length },
+      pending: pendingOf({ voices, rowSources }, latest),
     });
   } catch (err) {
     return fail(res, err);
