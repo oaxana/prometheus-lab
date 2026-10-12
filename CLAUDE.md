@@ -27,6 +27,12 @@ Everything below is on `main`, deployed and verified (Vercel Ready, every path 4
 - **Edits count as new material:** `update_my_submission` stamps `submissions.content_edited_at` only when the text really changes; `synthesis_versions.gathered_at` is taken before a run reads the rows; `pendingOf` returns `edited` (included rows edited after the latest version's `gathered_at`, else `created_at`) and `changed` includes it; the Synthesis page says "N contributions … have been edited since" and the admin button appears. Old versions are immutable. Not yet exercised on the live site (the owner has not edited a synthesized entry since).
 - Tests: 21 suites all pass (`cd tests && npm test`). Do not start the local preview and `npm test` together (same port 4173), and do not run two `npm test` at once; both crash suites.
 
+**Later the same day (2026-10-11, pushed together):**
+- **Gaps removed from Synthesis** when a version has none (no Gaps stat card, no Gaps section; stats row is 4 cards, 2x2 on phones). Versions that DO have gaps (old v1) still show them. The empty state before any voice, the locked-tab text and the Home step card no longer mention gaps.
+- **"New submissions will be added to the synthesis soon."** note (`.syn-note`) under the pending / edited lines in `synStatusLine`.
+- **Share thumbnail:** `public/og-image.jpg` (1200x675, 242 KB; WhatsApp drops images over ~300 KB), original in `assets/`. OG/Twitter tags in `public/index.html` and in the login page in `middleware.js`. GATE CHANGE (owner informed): link-preview robots (`PREVIEW_BOTS` user-agent list) get the login page as **200 on GET `/` only**, and GET/HEAD `/og-image.jpg` is open without the cookie. Every other path is still 401 (`tests/gate.test.mjs` section 2b). So "every path 401 without the cookie" now has exactly these two exceptions. Real WhatsApp/iMessage rendering is unverified (cached previews: Meta Sharing Debugger "Scrape again", or add `?v=2`).
+- Not-yet-tried: document/letter submitted for someone else: wizard "A document or paper" never credits the uploader; empty author box = "Unattributed document".
+
 **Open / next:**
 1. Review the new v2 for fairness the same way as the first one (compare each credited name with that person's own text). Not done yet: the owner walked away during the run; the removal count was not seen and is not stored.
 2. Owner decision: individual submissions that are only a link (e.g. a GitHub URL) are ignored by the AI; people should submit their text instead (no code change wanted).

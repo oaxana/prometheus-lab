@@ -22,6 +22,27 @@ function getCookie(request, name) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Link-preview tags (thumbnail when the link is shared in a text / WhatsApp / Slack ...). Preview robots cannot log in, so
+// they only ever see the login page, and /og-image.jpg is the one file served without the password.
+const SITE_URL = 'https://prometheus-lab-xi.vercel.app';
+const PREVIEW_TAGS = `<meta property="og:type" content="website">
+<meta property="og:site_name" content="Prometheus Lab">
+<meta property="og:title" content="Prometheus Lab">
+<meta property="og:description" content="Help shape how Humans and AI coexist together.">
+<meta property="og:url" content="${SITE_URL}/">
+<meta property="og:image" content="${SITE_URL}/og-image.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="675">
+<meta property="og:image:alt" content="Prometheus Lab: Help shape how Humans and AI coexist together.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Prometheus Lab">
+<meta name="twitter:description" content="Help shape how Humans and AI coexist together.">
+<meta name="twitter:image" content="${SITE_URL}/og-image.jpg">
+<meta name="description" content="Help shape how Humans and AI coexist together.">`;
+// Chat apps and social sites read these tags with their own robots; many refuse a preview when the page answers 401.
+const PREVIEW_BOTS = /facebookexternalhit|facebot|whatsapp|twitterbot|slackbot|telegrambot|linkedinbot|discordbot|applebot|skypeuripreview|redditbot|pinterest/i;
+
 const PAGE_HEAD = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' };
 
 function loginPage({ error = false, notConfigured = false } = {}) {
@@ -37,6 +58,7 @@ function loginPage({ error = false, notConfigured = false } = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Prometheus Lab</title>
+${PREVIEW_TAGS}
 <style>
 :root{--bg:#0d0b14;--surface:#181522;--border:#2d2a40;--text:#e0dbd0;--muted:#a09aad;--accent:#e8923a;--bad:#f0a245;
   --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
@@ -87,6 +109,14 @@ export default async function middleware(request) {
   }
 
   if (authed) return next();
+
+  // The share thumbnail is public (it is only the intro picture); nothing else is.
+  if (url.pathname === '/og-image.jpg' && (request.method === 'GET' || request.method === 'HEAD')) return next();
+
+  // Link-preview robots get the login page (with its preview tags) as a 200 on the home page only. Every other path stays 401.
+  if (url.pathname === '/' && request.method === 'GET' && PREVIEW_BOTS.test(request.headers.get('user-agent') || '')) {
+    return new Response(loginPage(), { status: 200, headers: PAGE_HEAD });
+  }
 
   // Not logged in: the API gets JSON, everything else gets the login page.
   if (url.pathname.startsWith('/api/')) {

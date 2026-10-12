@@ -262,6 +262,7 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .syn{font-family:'DM Sans',var(--font);color:var(--syn-fg)}
 .syn button{font-family:inherit;color:inherit}
 .syn-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:22px}
+.syn-stats-4{grid-template-columns:repeat(4,1fr)}
 .syn-stat{background:var(--syn-surface);border:1px solid var(--syn-line);border-radius:12px;padding:12px 12px 10px}
 .syn-stat .ti{font-size:15px;flex-shrink:0}
 .syn-num{font-size:26px;font-weight:700;line-height:1.1;margin-top:8px}
@@ -310,7 +311,7 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 @media(hover:hover){.dot:hover>.sugg-who,.dot:focus-visible>.sugg-who{display:block}}
 .spec-poles{display:flex;justify-content:space-between;gap:12px;margin-top:6px;font-family:'Space Mono',monospace;font-size:11px;color:var(--syn-muted)}
 .spec-poles span:last-child{text-align:right}
-@media(max-width:600px){.syn-stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.syn-stats{grid-template-columns:repeat(3,1fr)}.syn-stats-4{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:420px){.syn-meter{width:38px}.syn-phead{padding-right:52px}.syn-stat{padding:10px 9px 8px}.syn-num{font-size:22px}.syn-slabel{font-size:11px}.syn-tag{font-size:10px;padding:3px 7px}.syn-shead{gap:10px;padding:14px 12px 14px 14px}.syn-stitle{font-size:15px}}
 @media(prefers-reduced-motion:reduce){.acc-chev.rot{transition:none}}
 /* Synthesis page: header with version picker, footer with pending status + create button */
@@ -327,6 +328,7 @@ nav button{flex:1 0 auto;padding-left:10px;padding-right:10px}
 .syn-select select{width:100%;appearance:none;-webkit-appearance:none;font-family:inherit;font-size:15px;padding:10px 38px 10px 14px;border:1px solid var(--syn-line);border-radius:10px;background:var(--syn-surface);color:var(--syn-fg);cursor:pointer}
 .syn-select .ti{position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--syn-muted)}
 .syn-status{display:flex;align-items:baseline;gap:10px;font-size:14px;color:var(--syn-muted);margin:0}
+.syn-note{display:block;margin-top:2px;font-size:13px}
 .syn-status strong{color:var(--syn-fg)}
 .syn-status.older{display:block;margin:-10px 0 18px}
 .syn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--syn-commons);transform:translateY(-1px)}

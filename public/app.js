@@ -131,7 +131,7 @@ async function saveNameEdit(){
   catch(e){S.nameBusy=false;render();alert('Error: '+(e.message||'could not save name'));}
 }
 // ---------- tab locking: Pillars, Voices and Synthesis open after the participant's first real (non-test) contribution ----------
-const LOCKED_TABS={pillars:'Share your own thinking first, then explore the pillars.',voices:'Share your voice first, then see what others have shared.',synthesis:'Share your voice first, then see where the group agrees, disagrees and has gaps.'};
+const LOCKED_TABS={pillars:'Share your own thinking first, then explore the pillars.',voices:'Share your voice first, then see what others have shared.',synthesis:'Share your voice first, then see where the group agrees and disagrees.'};
 // Derived from the list we already load, so it updates the moment a submission is saved, edited, deleted or marked as test.
 // Only a logged-in admin who switched on "Unlock all tabs" (Admin page) skips this.
 function hasContributed(){return !!S.session&&S.submissions.some(s=>s.mine&&!s.isTest);}
@@ -189,7 +189,7 @@ function renderHome(m){
     <button class="btn btn-amber hero-cta" onclick="nav('submit')"><i class="ti ti-flame" aria-hidden="true"></i> Start here</button>
   </section>
   <div class="section-divider"><span>How it works</span></div>
-  <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe','submit')}${step(2,'Map',`AI connects your ideas to ${PILLARS.length} constitutional pillars`,'pillars')}${step(3,'Synthesize','See where we agree, disagree, and have gaps','synthesis')}</div>
+  <div class="step-grid">${step(1,'Share','Write, speak, or upload what you believe','submit')}${step(2,'Map',`AI connects your ideas to ${PILLARS.length} constitutional pillars`,'pillars')}${step(3,'Synthesize','See where we agree and where we disagree','synthesis')}</div>
   <div class="info-stack">
   <div class="card info-card"><div class="info-head"><i class="ti ti-script info-icon" aria-hidden="true"></i><h2 class="info-q">What's a constitution here?</h2></div><p>Behavioral agreements between humans and AI — how we coexist on the playa, and eventually everywhere. Tested at Burning Man, refined through practice. Inspired by how the 10 Principles came together.</p></div>
   <div class="card info-card trust-card"><div class="info-head"><i class="ti ti-shield-lock info-icon" aria-hidden="true"></i><h2 class="info-q">Built on trust</h2></div><p><strong class="trust-lead">Your email stays private.</strong> It only makes sure each voice counts once, and is never shown to anyone or sent to the AI. Your raw words stay yours; only AI summaries are shared with the group.</p></div>
@@ -434,10 +434,10 @@ function renderSynthesisResult(syn){
   const covered=new Set([...(syn.commons||[]),...(syn.contested||[])].map(c=>c.pillarId??c.pillar)).size;
   const stat=(icon,color,num,label)=>`<div class="syn-stat"><div class="syn-slabel"><i class="ti ti-${icon}" style="color:${color}" aria-hidden="true"></i>${label}</div><div class="syn-num">${num}</div></div>`;
   return`<div class="syn">
-    <div class="syn-stats" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+`<span class="syn-of"> / ${synPillarTotal(syn)}</span>`,'Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps')}</div>
+    <div class="syn-stats${gaps.length?'':' syn-stats-4'}" aria-label="Synthesis at a glance">${stat('users','var(--syn-fg)',syn.count||'—','Voices heard')}${stat('layout-grid','var(--syn-fg)',covered+`<span class="syn-of"> / ${synPillarTotal(syn)}</span>`,'Pillars covered')}${stat('circle-check','var(--syn-commons)',commons.length,'Common ground')}${stat('arrows-split-2','var(--syn-contested)',contested.length,'Contested')}${gaps.length?stat('circle-dashed','var(--syn-gaps)',gaps.length,'Gaps'):''}</div>
     ${synSection('commons','The Commons','Where we agree',commons.length,commons.map(c=>synPillarRow('commons',c)).join(''),'No shared ground found yet.')}
     ${synSection('contested','Contested','Where we diverge',contested.length,contested.map(c=>synPillarRow('contested',c)).join(''),'No open disagreements found.')}
-    ${synSection('gaps','Gaps','What’s missing',gaps.length,gaps.map(synGapRow).join(''),'Every pillar was addressed.')}
+    ${gaps.length?synSection('gaps','Gaps','What’s missing',gaps.length,gaps.map(synGapRow).join(''),''):''}
   </div>`;
 }
 
@@ -470,20 +470,20 @@ async function fetchSynStatus(key,includeTests){
 }
 function synStatusLine(st){
   if(!st||!S.synVersions.length)return'';
-  const p=st.pending,line=(kind,html)=>`<p class="syn-status ${kind}"><span class="syn-dot" aria-hidden="true"></span><span>${html}</span></p>`;
+  const p=st.pending,line=(kind,html,note)=>`<p class="syn-status ${kind}"><span class="syn-dot" aria-hidden="true"></span><span>${html}${note?`<span class="syn-note">${note}</span>`:''}</span></p>`;
+  const soon='New submissions will be added to the synthesis soon.';
   if(p.pillarsChanged)return line('pending',`<strong>The pillars have changed</strong> since the latest synthesis. The next synthesis will reread every contribution against the new pillars.`);
-  if(p.contributions>0)return line('pending',`<strong>${plural(p.contributions,'new contribution')}</strong> from ${plural(p.voices,'voice')} ${p.contributions===1?'is':'are'} waiting for the next synthesis.`);
-  if(p.edited>0)return line('pending',`<strong>${plural(p.edited,'contribution')}</strong> in the latest synthesis ${p.edited===1?'has':'have'} been edited since. The next synthesis will read the new text.`);
+  if(p.contributions>0)return line('pending',`<strong>${plural(p.contributions,'new contribution')}</strong> from ${plural(p.voices,'voice')} ${p.contributions===1?'is':'are'} waiting for the next synthesis.`,soon);
+  if(p.edited>0)return line('pending',`<strong>${plural(p.edited,'contribution')}</strong> in the latest synthesis ${p.edited===1?'has':'have'} been edited since. The next synthesis will read the new text.`,soon);
   if(p.removed>0)return line('pending',`<strong>${plural(p.removed,'contribution')}</strong> in the latest synthesis ${p.removed===1?'has':'have'} since been removed or marked as test. The next synthesis will leave ${p.removed===1?'it':'them'} out.`);
   return line('current','Current through all submitted contributions.');
 }
 function renderSynthesis(m){
   if(!sb){setupNeeded(m);return;}
   const real=S.synthIncludeTests?S.submissions:S.submissions.filter(s=>!s.isTest);
-  if(!S.submissions.length&&!S.synVersions.length){m.innerHTML=`<h2>Collective Synthesis</h2><p class="subtitle">Once voices come in, AI sorts everything into three categories.</p>
+  if(!S.submissions.length&&!S.synVersions.length){m.innerHTML=`<h2>Collective Synthesis</h2><p class="subtitle">Once voices come in, AI sorts everything into two groups: where we agree and where we diverge.</p>
     <div class="preview-block" style="border-color:var(--commons)"><div class="preview-title"><span class="section-tag tag-commons" style="margin:0">The Commons</span></div><p>Topics where voices broadly agree. Easy wins — ratify quickly. Each shows the pillar, consensus summary, and strength.</p></div>
     <div class="preview-block" style="border-color:var(--contested)"><div class="preview-title"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span></div><p>Topics where voices diverge. Your discussion agenda — the real debates. Each shows competing positions and the core tension.</p></div>
-    <div class="preview-block" style="border-color:var(--gaps)"><div class="preview-title"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span></div><p>Pillars nobody addressed. Blind spots to assign or discuss.</p></div>
     <div style="text-align:center;margin-top:16px"><button class="btn btn-primary" onclick="nav('submit')">Add the first voice</button></div>`;return;}
   // pending-material status (counts only)
   const incTests=S.isAdmin&&S.synthIncludeTests;
@@ -503,8 +503,7 @@ function renderSynthesis(m){
     body=syn?renderSynthesisResult(syn):syn===false?`<p class="syn-status">Couldn’t load this version. Try again in a moment.</p>`
       :`<div class="card"><div class="loading"><div class="spinner"></div>Loading synthesis…</div></div>`;
   }else{body=`<div class="preview-block"><span class="section-tag tag-commons" style="margin:0">The Commons</span><p style="margin-top:8px">Consensus positions appear here once the first synthesis is created.</p></div>
-    <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>
-    <div class="preview-block"><span class="section-tag tag-gaps" style="margin:0">The Gaps</span><p style="margin-top:8px">Uncovered pillars appear here.</p></div>`;}
+    <div class="preview-block"><span class="section-tag tag-contested" style="margin:0">Contested Ground</span><p style="margin-top:8px">Competing positions and tensions appear here.</p></div>`;}
   if(S.synthesizing)body=`<div class="card"><div class="loading"><div class="spinner"></div>Reading all voices and finding patterns...</div></div>`;
 
   // Project lead: create a new version, only when something changed since the latest one.

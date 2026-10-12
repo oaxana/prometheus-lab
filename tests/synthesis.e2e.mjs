@@ -134,7 +134,7 @@ await postService('/supabase/rest/v1/submissions', { pillars: [4], content: 'new
 const st1 = await statusApi();
 check('status API: 2 new contributions from 2 voices, 1 of them new', st1.pending.contributions === 2 && st1.pending.voices === 2 && st1.pending.newVoices === 1 && st1.pending.changed === true);
 await p.evaluate(() => refresh()); await p.waitForSelector('.syn-status.pending');
-check('pending line shown to everyone', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '2 new contributions from 2 voices are waiting for the next synthesis.');
+check('pending line shown to everyone', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '2 new contributions from 2 voices are waiting for the next synthesis. New submissions will be added to the synthesis soon.');
 check('admin: Create New Synthesis appears once there is new material', (await p.locator('button:has-text("Create New Synthesis")').count()) === 1 && (await p.locator('.syn-run-note').count()) === 0);
 
 // sloppy model output is repaired, not trusted: numbers clamped, missing fields tolerated (this run also creates v2)
@@ -206,7 +206,7 @@ await fetch(B + '/__edit?from=' + encodeURIComponent('newcomer thought') + '&to=
 const e1 = await statusApi();
 check('an edit counts as changed material, with no new contribution or voice', e1.pending.edited === 1 && e1.pending.contributions === 0 && e1.pending.voices === 0 && e1.pending.removed === 0 && e1.pending.changed === true, JSON.stringify(e1.pending));
 await p.evaluate(() => { S.synStatusKey = ''; render(); }); await p.waitForSelector('.syn-status.pending');
-check('the Synthesis page says it was edited', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '1 contribution in the latest synthesis has been edited since. The next synthesis will read the new text.');
+check('the Synthesis page says it was edited', (await p.locator('.syn-status').innerText()).replace(/\s+/g, ' ').trim() === '1 contribution in the latest synthesis has been edited since. The next synthesis will read the new text. New submissions will be added to the synthesis soon.');
 const nBefore = (await versions()).length, callsE = await llmCalls();
 const runE = await runApi();
 check('running again makes a NEW version from the edited text', runE.unchanged === false && (await versions()).length === nBefore + 1 && (await llmCalls()) === callsE + 1);
@@ -222,6 +222,15 @@ await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 98, timestamp: 
 await p.click('#acc-syn-commons .syn-shead'); await p.click('#acc-syn-gaps .syn-shead'); await settle();
 check('old 12-pillar version: its own pillar names with their old emojis, out of 12', (await p.locator('#acc-syn-commons-10 .syn-pname').innerText()) === '🤖 AI Presence, Identity & Immediacy' && (await p.locator('#acc-syn-gaps-11 .syn-pname').innerText()) === '🌉 The Default World Bridge' && (await p.locator('.syn-stat:has-text("Pillars covered") .syn-num').innerText()).replace(/\s+/g, ' ') === '1 / 12');
 check('a version made with the new pillars is out of 8', await p.evaluate(() => synPillarTotal({ commons: [{ pillar: 'Governance & Accountability' }] })) === 8);
+
+// a version without gaps shows neither the Gaps stat nor the Gaps section
+await p.evaluate(() => { S.acc = {}; S.synVersions = [{ version: 97, timestamp: Date.now(), count: 2, submissionCount: 2 }, ...S.synVersions]; S.synView = 97;
+  S.synBodies[97] = { commons: [{ pillarId: 2, pillar: 'Governance & Accountability', consensus: 70, points: [{ point: 'p', voices: ['A'] }], participants: ['A'] }], contested: [], gaps: [] }; render(); });
+await settle();
+check('no gaps: no Gaps stat card and no Gaps section', (await p.locator('.syn-stat').allInnerTexts()).every((t) => !/Gaps/.test(t)) && (await p.locator('.syn-stat').count()) === 4 && (await p.locator('#acc-syn-gaps').count()) === 0);
+await p.evaluate(() => { S.synView = null; render(); });
+const pend = await p.locator('.syn-status.pending').allInnerTexts();
+check('waiting line carries the "added soon" note when something is pending', !pend.length || pend.every((t) => /added to the synthesis soon/.test(t)), pend.join('|'));
 
 // test personas are gone
 check('no "Testing as" persona switcher or persona code left', (await p.locator('.persona-row').count()) === 0 && (await p.evaluate(() => typeof setPersona === 'undefined' && typeof PERSONAS === 'undefined')));

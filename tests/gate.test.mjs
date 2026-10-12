@@ -29,6 +29,20 @@ check('/api/summarize locked w/ JSON code', r.status === 401 && (await r.json())
 r = await mw(req('/api/synthesize', { method: 'POST' })); check('/api/synthesize locked', r.status === 401);
 r = await mw(req('/api/admin', { method: 'POST' })); check('/api/admin locked', r.status === 401);
 
+// 2b. share thumbnail: link-preview robots may read the login page (200) and the one picture; nothing else opens
+const bot = { headers: { 'user-agent': 'WhatsApp/2.23.20 A' } };
+r = await mw(req('/', bot)); const botPage = await r.text();
+check('preview robot gets the login page as 200 with the share tags', r.status === 200 && botPage.includes('og:image" content="https://prometheus-lab-xi.vercel.app/og-image.jpg"') && botPage.includes('summary_large_image') && botPage.includes('type="password"'));
+r = await mw(req('/', { headers: { 'user-agent': 'facebookexternalhit/1.1 Twitterbot/1.0' } })); check('iMessage-style robot gets it too', r.status === 200);
+r = await mw(req('/', { headers: { 'user-agent': 'Mozilla/5.0 (iPhone) Safari' } })); check('an ordinary browser still gets 401', r.status === 401);
+for (const p of ['/config.js', '/app.js', '/anything', '/api/metrics']) { r = await mw(req(p, bot)); check(`${p} stays locked for preview robots`, r.status === 401 && !isNext(r)); }
+r = await mw(req('/', { method: 'POST', headers: bot.headers })); check('POST / stays locked for preview robots', r.status === 401);
+r = await mw(req('/og-image.jpg')); check('share picture opens without the password', isNext(r));
+r = await mw(req('/og-image.jpg', { method: 'POST' })); check('only GET/HEAD for the picture', r.status === 401);
+r = await mw(req('/og-image.jpg.map')); check('lookalike path stays locked', r.status === 401);
+check('share picture exists, is a JPEG under 300 KB', fs.existsSync(ROOT + '/public/og-image.jpg') && fs.statSync(ROOT + '/public/og-image.jpg').size < 300 * 1024 && fs.readFileSync(ROOT + '/public/og-image.jpg').subarray(0, 2).toString('hex') === 'ffd8');
+check('index.html carries the same share tags', fs.readFileSync(ROOT + '/public/index.html', 'utf8').includes('og:image" content="https://prometheus-lab-xi.vercel.app/og-image.jpg"'));
+
 // 3. wrong passwords
 let t = Date.now(); r = await mw(login('wrong'));
 check('wrong password -> 401 + error + delayed', r.status === 401 && (await r.text()).includes("isn't right") && Date.now() - t >= 900, `${Date.now() - t}ms`);
