@@ -19,7 +19,7 @@ process.env.SITE_PASSWORD = 'correct horse battery staple';
 
 // 2. everything locked without a cookie
 r = await mw(req('/')); const page = await r.text();
-check('/ -> login page 401', r.status === 401 && page.includes('type="password"') && page.includes('Prometheus Lab'));
+check('/ -> login page (200, holds nothing private, carries the share tags)', r.status === 200 && !isNext(r) && page.includes('type="password"') && page.includes('Prometheus Lab'));
 check('login page not cacheable / noindex', r.headers.get('cache-control') === 'no-store' && r.headers.get('x-robots-tag') === 'noindex');
 for (const p of ['/config.js', '/app.js', '/styles.css', '/index.html', '/anything']) {
   r = await mw(req(p)); check(`${p} locked`, r.status === 401 && !isNext(r));
@@ -29,14 +29,14 @@ check('/api/summarize locked w/ JSON code', r.status === 401 && (await r.json())
 r = await mw(req('/api/synthesize', { method: 'POST' })); check('/api/synthesize locked', r.status === 401);
 r = await mw(req('/api/admin', { method: 'POST' })); check('/api/admin locked', r.status === 401);
 
-// 2b. share thumbnail: link-preview robots may read the login page (200) and the one picture; nothing else opens
+// 2b. share thumbnail: anyone logged out sees the login page on / (200) and may fetch the one picture; nothing else opens
 const bot = { headers: { 'user-agent': 'WhatsApp/2.23.20 A' } };
 r = await mw(req('/', bot)); const botPage = await r.text();
-check('preview robot gets the login page as 200 with the share tags', r.status === 200 && botPage.includes('og:image" content="https://prometheus-lab-xi.vercel.app/og-image.jpg"') && botPage.includes('summary_large_image') && botPage.includes('type="password"'));
-r = await mw(req('/', { headers: { 'user-agent': 'facebookexternalhit/1.1 Twitterbot/1.0' } })); check('iMessage-style robot gets it too', r.status === 200);
-r = await mw(req('/', { headers: { 'user-agent': 'Mozilla/5.0 (iPhone) Safari' } })); check('an ordinary browser still gets 401', r.status === 401);
-for (const p of ['/config.js', '/app.js', '/anything', '/api/metrics']) { r = await mw(req(p, bot)); check(`${p} stays locked for preview robots`, r.status === 401 && !isNext(r)); }
-r = await mw(req('/', { method: 'POST', headers: bot.headers })); check('POST / stays locked for preview robots', r.status === 401);
+check('a robot gets the login page as 200 with the share tags', r.status === 200 && botPage.includes('og:image" content="https://prometheus-lab-xi.vercel.app/og-image.jpg"') && botPage.includes('summary_large_image') && botPage.includes('type="password"'));
+r = await mw(req('/', { headers: { 'user-agent': 'facebookexternalhit/1.1 Twitterbot/1.0' } })); check('an iMessage-style robot gets it too', r.status === 200);
+r = await mw(req('/', { headers: { 'user-agent': 'Mozilla/5.0 (iPhone) Safari' } })); check('an ordinary browser gets the same login page, never the app', r.status === 200 && !isNext(r) && (await r.text()).includes('type="password"'));
+for (const p of ['/config.js', '/app.js', '/anything', '/api/metrics']) { r = await mw(req(p, bot)); check(`${p} stays locked for robots`, r.status === 401 && !isNext(r)); }
+r = await mw(req('/', { method: 'POST', headers: bot.headers })); check('POST / stays locked for robots', r.status === 401);
 r = await mw(req('/og-image.jpg')); check('share picture opens without the password', isNext(r));
 r = await mw(req('/og-image.jpg', { method: 'POST' })); check('only GET/HEAD for the picture', r.status === 401);
 r = await mw(req('/og-image.jpg.map')); check('lookalike path stays locked', r.status === 401);
@@ -65,11 +65,11 @@ for (const p of ['/', '/config.js', '/app.js']) { r = await mw(req(p, { headers:
 r = await mw(req('/api/summarize', { method: 'POST', headers: { cookie: 'other=1; ' + cookie } })); check('API allowed with cookie among others', isNext(r));
 
 // 6. tampering / rotation
-r = await mw(req('/', { headers: { cookie: cookie.slice(0, -1) + (cookie.endsWith('a') ? 'b' : 'a') } })); check('tampered cookie rejected', r.status === 401);
-r = await mw(req('/', { headers: { cookie: 'pl_session=' } })); check('empty cookie rejected', r.status === 401);
-r = await mw(req('/', { headers: { cookie: 'pl_session=correct horse battery staple' } })); check('raw password as cookie rejected', r.status === 401);
+r = await mw(req('/', { headers: { cookie: cookie.slice(0, -1) + (cookie.endsWith('a') ? 'b' : 'a') } })); check('tampered cookie rejected', !isNext(r) && (await r.text()).includes('type="password"'));
+r = await mw(req('/', { headers: { cookie: 'pl_session=' } })); check('empty cookie rejected', !isNext(r) && (await r.text()).includes('type="password"'));
+r = await mw(req('/', { headers: { cookie: 'pl_session=correct horse battery staple' } })); check('raw password as cookie rejected', !isNext(r) && (await r.text()).includes('type="password"'));
 process.env.SITE_PASSWORD = 'new password';
-r = await mw(req('/', { headers: { cookie } })); check('old cookie dies when password rotated', r.status === 401);
+r = await mw(req('/', { headers: { cookie } })); check('old cookie dies when password rotated', !isNext(r) && (await r.text()).includes('type="password"'));
 
 // 7. http (local dev) omits Secure so cookie works on http://localhost
 r = await mw(new Request('http://localhost:3000/__login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'password=new%20password' }));

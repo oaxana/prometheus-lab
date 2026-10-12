@@ -22,14 +22,13 @@ function getCookie(request, name) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Link-preview tags (thumbnail when the link is shared in a text / WhatsApp / Slack ...). Preview robots cannot log in, so
+// Link-preview tags (thumbnail when the link is shared in a text / WhatsApp / Slack ...). Link-preview robots cannot log in, so
 // they only ever see the login page, and /og-image.jpg is the one file served without the password.
 const SITE_URL = 'https://prometheus-lab-xi.vercel.app';
 const PREVIEW_TAGS = `<meta property="og:type" content="website">
 <meta property="og:site_name" content="Prometheus Lab">
 <meta property="og:title" content="Prometheus Lab">
 <meta property="og:description" content="Help shape how Humans and AI coexist together.">
-<meta property="og:url" content="${SITE_URL}/">
 <meta property="og:image" content="${SITE_URL}/og-image.jpg">
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
@@ -40,9 +39,6 @@ const PREVIEW_TAGS = `<meta property="og:type" content="website">
 <meta name="twitter:description" content="Help shape how Humans and AI coexist together.">
 <meta name="twitter:image" content="${SITE_URL}/og-image.jpg">
 <meta name="description" content="Help shape how Humans and AI coexist together.">`;
-// Chat apps and social sites read these tags with their own robots; many refuse a preview when the page answers 401.
-const PREVIEW_BOTS = /facebookexternalhit|facebot|whatsapp|twitterbot|slackbot|telegrambot|linkedinbot|discordbot|applebot|skypeuripreview|redditbot|pinterest/i;
-
 const PAGE_HEAD = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' };
 
 function loginPage({ error = false, notConfigured = false } = {}) {
@@ -113,10 +109,10 @@ export default async function middleware(request) {
   // The share thumbnail is public (it is only the intro picture); nothing else is.
   if (url.pathname === '/og-image.jpg' && (request.method === 'GET' || request.method === 'HEAD')) return next();
 
-  // Link-preview robots get the login page (with its preview tags) as a 200 on the home page only. Every other path stays 401.
-  if (url.pathname === '/' && request.method === 'GET' && PREVIEW_BOTS.test(request.headers.get('user-agent') || '')) {
-    return new Response(loginPage(), { status: 200, headers: PAGE_HEAD });
-  }
+  // The home page shows the login page as a 200 to everyone who is not logged in (it holds nothing private). Chat apps read the
+  // share tags from it, and they cannot be told apart reliably by name (WhatsApp on a phone did not match a user-agent list).
+  // Every other path stays 401.
+  if (url.pathname === '/' && request.method === 'GET') return html(200, loginPage());
 
   // Not logged in: the API gets JSON, everything else gets the login page.
   if (url.pathname.startsWith('/api/')) {
