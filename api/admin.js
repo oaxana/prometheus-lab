@@ -1,9 +1,9 @@
 // GET  /api/admin                                  -> { admin: boolean }   (is this browser logged in as admin?)
 // POST /api/admin  { action: 'login', password }   -> { admin: true } + HttpOnly session cookie, or 401
 // POST /api/admin  { action: 'logout' }            -> { admin: false } + clears the cookie
-// The password is checked here against ADMIN_PASSWORD, never in the browser. The cookie has no Max-Age,
+// The password is checked here against ADMIN_PASSWORD or any extra ADMIN_PASSWORD_<name>, never in the browser. The cookie has no Max-Age,
 // so it lasts until the browser is closed (or "Log out of admin").
-import { ADMIN_COOKIE, adminToken, safeEqual, isAdmin, HttpError, send, readJson, fail } from './_shared.js';
+import { ADMIN_COOKIE, adminToken, adminPasswords, safeEqual, isAdmin, HttpError, send, readJson, fail } from './_shared.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,10 +24,11 @@ export default async function handler(req, res) {
     }
     if (body.action !== 'login') throw new HttpError(400, 'Unknown action.');
 
-    const password = process.env.ADMIN_PASSWORD;
-    if (!password) throw new HttpError(503, 'ADMIN_PASSWORD is not configured on the server.');
+    const passwords = adminPasswords();
+    if (!passwords.length) throw new HttpError(503, 'ADMIN_PASSWORD is not configured on the server.');
     const given = typeof body.password === 'string' ? body.password : '';
-    if (!given || !safeEqual(given, password)) {
+    const password = given && passwords.find((p) => safeEqual(given, p));
+    if (!password) {
       await sleep(1000); // slows down guessing
       throw new HttpError(401, 'That password isn’t right.');
     }

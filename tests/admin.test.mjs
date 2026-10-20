@@ -67,6 +67,31 @@ process.env.ADMIN_PASSWORD = 'a new password';
 r = await call(admin, { method: 'GET', cookie: good });
 check('changing ADMIN_PASSWORD logs every admin out', r.body.admin === false);
 
+// Second admin (any ADMIN_PASSWORD_<name>): own password, own cookie, independent of the first.
+process.env.ADMIN_PASSWORD = 'lead password';
+process.env.ADMIN_PASSWORD_HELPER = 'helper password';
+r = await login('helper password');
+check('second password logs in', r.status === 200 && r.body.admin === true);
+const helper = cookieOf(r);
+r = await login('lead password');
+const lead = cookieOf(r);
+check('first password still logs in, with a different cookie', r.status === 200 && lead !== helper);
+r = await call(admin, { method: 'GET', cookie: helper });
+check('second admin cookie is admin', r.body.admin === true);
+r = await call(synthesize, { body: {}, cookie: helper });
+check('second admin passes the synthesis admin check', r.status === 500 && r.body.error.includes('SUPABASE_URL'));
+r = await login('helper passwor');
+check('near-miss of the second password rejected', r.status === 401);
+process.env.ADMIN_PASSWORD_HELPER = 'helper changed';
+r = await call(admin, { method: 'GET', cookie: helper });
+check('changing ADMIN_PASSWORD_HELPER logs out only the second admin', r.body.admin === false);
+r = await call(admin, { method: 'GET', cookie: lead });
+check('...and the first admin stays logged in', r.body.admin === true);
+delete process.env.ADMIN_PASSWORD_HELPER;
+r = await login('');
+check('empty password is rejected even with ADMIN_PASSWORD_HELPER unset', r.status === 401);
+process.env.ADMIN_PASSWORD = 'a new password';
+
 r = await call(admin, { body: { action: 'logout' } });
 check('logout clears the cookie', r.status === 200 && r.body.admin === false && /pl_admin=;/.test(r.headers['set-cookie']) && /Max-Age=0/.test(r.headers['set-cookie']));
 

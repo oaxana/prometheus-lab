@@ -144,6 +144,7 @@ Create an API key at console.anthropic.com. **Set a monthly spend limit** there.
    | `SUPABASE_URL` | Supabase Project URL, same as in `config.js` |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase **service_role** key. Server-only; bypasses row-level security |
    | `ADMIN_PASSWORD` | Password you invent for the Admin page; unlocks "Run synthesis" and "Unlock all tabs". If missing, admin features are off |
+   | `ADMIN_PASSWORD_<NAME>` (optional) | Another admin's own password (e.g. one per collaborator). Same powers; removing or changing one logs out only that person |
    | `SITE_PASSWORD` | The crew password shown on the landing page (use a different value from `ADMIN_PASSWORD`) |
 
    Changing a variable later requires a **Redeploy** (Deployments → ⋯ → Redeploy). If `SITE_PASSWORD` is missing, the whole site shows "This site isn't set up yet" (it fails closed).

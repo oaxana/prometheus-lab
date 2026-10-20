@@ -73,7 +73,7 @@ export function parseJsonResponse(msg) {
 
 // ---------- admin (project lead) session ----------
 // POST /api/admin checks ADMIN_PASSWORD and sets an HttpOnly session cookie holding a keyed hash
-// (never the password). Changing ADMIN_PASSWORD logs every admin out.
+// (never the password). Changing ADMIN_PASSWORD logs that admin out.
 export const ADMIN_COOKIE = 'pl_admin';
 export const adminToken = (password) => createHmac('sha256', password).update('prometheus-lab-admin-v1').digest('hex');
 // Constant-time comparison (hashing first makes the two buffers the same length).
@@ -85,13 +85,18 @@ export function getCookie(req, name) {
   return hit ? hit.slice(name.length + 1) : '';
 }
 
+// ADMIN_PASSWORD is the project lead's; any extra variable named ADMIN_PASSWORD_<anything> is another
+// person's own password. Each has its own session cookie value, so changing or removing one logs out only that person.
+export const adminPasswords = () =>
+  Object.keys(process.env).filter((k) => /^ADMIN_PASSWORD(_.+)?$/.test(k)).sort().map((k) => process.env[k]).filter(Boolean);
+
 export function isAdmin(req) {
-  const password = process.env.ADMIN_PASSWORD;
-  return !!password && safeEqual(getCookie(req, ADMIN_COOKIE), adminToken(password));
+  const cookie = getCookie(req, ADMIN_COOKIE);
+  return adminPasswords().some((password) => safeEqual(cookie, adminToken(password)));
 }
 
 export function requireAdmin(req) {
-  if (!process.env.ADMIN_PASSWORD) throw new HttpError(503, 'ADMIN_PASSWORD is not configured on the server, so admin features are disabled.');
+  if (!adminPasswords().length) throw new HttpError(503, 'ADMIN_PASSWORD is not configured on the server, so admin features are disabled.');
   if (!isAdmin(req)) throw new HttpError(401, 'Admin login required.');
 }
 
